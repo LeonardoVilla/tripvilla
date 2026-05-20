@@ -4,6 +4,7 @@ import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
+    Image,
     KeyboardAvoidingView,
     Platform,
     Pressable,
@@ -61,7 +62,11 @@ export default function LoginScreen() {
       <View style={styles.inner}>
         {/* Logo / título */}
         <View style={styles.logoArea}>
-          <Ionicons name="map-outline" size={52} color={TEAL} />
+          <Image
+            source={require('@/assets/images/iconetelalogin.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
           <Text style={styles.appName}>TripVilla</Text>
           <Text style={styles.subtitle}>Seu roteiro de viagem em um só lugar</Text>
         </View>
@@ -119,8 +124,9 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
   inner: { flex: 1, justifyContent: 'center', paddingHorizontal: 28 },
-  logoArea: { alignItems: 'center', marginBottom: 40 },
-  appName: { fontSize: 32, fontWeight: '800', color: TEAL, marginTop: 10 },
+  logoArea: { alignItems: 'center', marginBottom: 32 },
+  logoImage: { width: 200, height: 140, marginBottom: 8 },
+  appName: { fontSize: 32, fontWeight: '800', color: TEAL, marginTop: 4 },
   subtitle: { fontSize: 13, color: '#666', marginTop: 4, textAlign: 'center' },
   form: {},
   label: { fontSize: 13, fontWeight: '600', color: '#333', marginBottom: 6 },
