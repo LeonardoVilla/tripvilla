@@ -18,14 +18,16 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 
-import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import { firebaseApp } from '@/firebaseInit';
+import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import {
     addDayPlanItem,
     DayPlanItem,
     DayPlanSource,
+    deleteDayPlanItem,
     getDayPlanItems,
     getUserPlaces,
+    updateDayPlanItem,
 } from '@/services/firestoreService';
 
 const TEAL = '#1f7a6f';
@@ -69,6 +71,14 @@ export default function DayPlanDetailScreen() {
   const [amountSpent, setAmountSpent] = useState('0,00');
   const [itemNotes, setItemNotes] = useState('');
 
+  const [optionsItemId, setOptionsItemId] = useState<string | null>(null);
+  const [editItemModalVisible, setEditItemModalVisible] = useState(false);
+  const [editingItem, setEditingItem] = useState<DayPlanItem | null>(null);
+  const [editArrivalTime, setEditArrivalTime] = useState('09:00');
+  const [editLeaveTime, setEditLeaveTime] = useState('10:00');
+  const [editAmountSpent, setEditAmountSpent] = useState('0,00');
+  const [editItemNotes, setEditItemNotes] = useState('');
+
   const getUid = () => getAuth(firebaseApp).currentUser?.uid;
 
   const selectedPlace = useMemo(
@@ -110,6 +120,71 @@ export default function DayPlanDetailScreen() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const openItemEditModal = (item: DayPlanItem) => {
+    setEditingItem(item);
+    setEditArrivalTime(item.arrivalTime ?? '09:00');
+    setEditLeaveTime(item.leaveTime ?? '10:00');
+    setEditAmountSpent(String(item.amountSpent ?? 0).replace('.', ','));
+    setEditItemNotes(item.notes ?? '');
+    setOptionsItemId(null);
+    setEditItemModalVisible(true);
+  };
+
+  const handleUpdateItem = async () => {
+    const parsedAmount = parseFloat(editAmountSpent.replace(',', '.'));
+    if (!Number.isFinite(parsedAmount)) {
+      Toast.show({ type: 'error', text1: 'Valor invalido', text2: 'Informe um numero valido.' });
+      return;
+    }
+    try {
+      setSaving(true);
+      const uid = getUid();
+      if (!uid || !editingItem) return;
+      const dayPlanLocalId = editingItem.dayPlanId ?? id;
+      await updateDayPlanItem(
+        uid,
+        dayPlanLocalId,
+        editingItem.id,
+        {
+          arrivalTime: editArrivalTime,
+          leaveTime: editLeaveTime,
+          amountSpent: parsedAmount,
+          notes: editItemNotes.trim(),
+        },
+        editingItem.firestoreId,
+      );
+      Toast.show({ type: 'success', text1: 'Parada atualizada!' });
+      setEditItemModalVisible(false);
+      await loadData();
+    } catch (err) {
+      Toast.show({
+        type: 'error',
+        text1: 'Erro ao atualizar',
+        text2: getFirebaseErrorMessage(err, 'Nao foi possivel atualizar.'),
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteItem = async (item: DayPlanItem) => {
+    setOptionsItemId(null);
+    const uid = getUid();
+    if (!uid) return;
+    try {
+      const dayPlanLocalId = item.dayPlanId ?? id;
+      await deleteDayPlanItem(uid, dayPlanLocalId, item.id, item.firestoreId);
+      setItems((prev) => prev.filter((i) => i.id !== item.id));
+      Toast.show({ type: 'success', text1: 'Parada removida.' });
+    } catch (err) {
+      Toast.show({
+        type: 'error',
+        text1: 'Erro ao excluir',
+        text2: getFirebaseErrorMessage(err, 'Nao foi possivel excluir.'),
+      });
+    }
+  };
 
   const handleAddItem = async () => {
     if (!selectedPlaceId) {
@@ -199,9 +274,23 @@ export default function DayPlanDetailScreen() {
                   <Text style={styles.cardDetail}>Endereco: {(item as any).placeLocation}</Text>
                 )}
               </View>
-              <Pressable style={styles.moreBtn}>
-                <Ionicons name="ellipsis-vertical" size={20} color="#666" />
-              </Pressable>
+              <View style={styles.moreBtn}>
+                <Pressable onPress={() => setOptionsItemId(optionsItemId === item.id ? null : item.id)}>
+                  <Ionicons name="ellipsis-vertical" size={20} color="#666" />
+                </Pressable>
+                {optionsItemId === item.id && (
+                  <View style={styles.optionsMenu}>
+                    <Pressable style={styles.optionsMenuItem} onPress={() => openItemEditModal(item)}>
+                      <Ionicons name="create-outline" size={16} color="#333" />
+                      <Text style={styles.optionsMenuText}>Editar</Text>
+                    </Pressable>
+                    <Pressable style={styles.optionsMenuItem} onPress={() => handleDeleteItem(item)}>
+                      <Ionicons name="trash-outline" size={16} color="#e53935" />
+                      <Text style={[styles.optionsMenuText, { color: '#e53935' }]}>Excluir</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
             </View>
           )}
           ListEmptyComponent={<Text style={styles.empty}>Nenhum local adicionado ainda.</Text>}
@@ -316,6 +405,61 @@ export default function DayPlanDetailScreen() {
           </View>
         </Pressable>
       </Modal>
+
+      {/* Edit item modal */}
+      <Modal
+        visible={editItemModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditItemModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.overlay}
+        >
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditItemModalVisible(false)} />
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Editar parada</Text>
+
+            <View style={styles.row}>
+              <View style={styles.half}>
+                <Text style={styles.label}>Chegada</Text>
+                <TextInput style={styles.input} value={editArrivalTime} onChangeText={setEditArrivalTime} />
+              </View>
+              <View style={[styles.half, { marginLeft: 10 }]}>
+                <Text style={styles.label}>Saida</Text>
+                <TextInput style={styles.input} value={editLeaveTime} onChangeText={setEditLeaveTime} />
+              </View>
+            </View>
+
+            <Text style={styles.label}>Quanto gastei no local</Text>
+            <TextInput
+              style={styles.input}
+              value={editAmountSpent}
+              onChangeText={setEditAmountSpent}
+              keyboardType="decimal-pad"
+            />
+
+            <Text style={styles.label}>Observacoes</Text>
+            <TextInput
+              style={[styles.input, styles.multiline]}
+              placeholder="Observacoes"
+              value={editItemNotes}
+              onChangeText={setEditItemNotes}
+              multiline
+            />
+
+            <Pressable
+              style={[styles.saveBtn, saving && { opacity: 0.7 }]}
+              onPress={handleUpdateItem}
+              disabled={saving}
+            >
+              <Ionicons name="save-outline" size={18} color="#fff" />
+              <Text style={styles.saveBtnText}>{saving ? 'Salvando...' : 'Salvar alteracoes'}</Text>
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -362,7 +506,29 @@ const styles = StyleSheet.create({
   cardContent: { flex: 1 },
   cardName: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginBottom: 4 },
   cardDetail: { fontSize: 13, color: '#555', marginBottom: 2 },
-  moreBtn: { paddingLeft: 8, paddingTop: 2 },
+  moreBtn: { paddingLeft: 8, paddingTop: 2, position: 'relative', alignItems: 'center' },
+  optionsMenu: {
+    position: 'absolute',
+    right: 0,
+    top: 24,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    paddingVertical: 4,
+    minWidth: 120,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    zIndex: 100,
+  },
+  optionsMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  optionsMenuText: { fontSize: 14, color: '#333' },
   empty: { textAlign: 'center', color: '#888', marginTop: 20 },
   fab: {
     position: 'absolute',

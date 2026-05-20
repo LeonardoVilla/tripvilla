@@ -2,6 +2,8 @@
 import { addDoc, collection, deleteDoc, doc, getFirestore, increment, updateDoc } from 'firebase/firestore';
 import {
     addToSyncQueue,
+    deleteLocalDayPlan,
+    deleteLocalDayPlanItem,
     deleteLocalPlace,
     genLocalId,
     getLocalDayPlanItems,
@@ -9,13 +11,15 @@ import {
     getLocalPlaces,
     getPlanFirestoreId,
     markSynced,
+    removeSyncEntryByLocalId,
+    updateLocalDayPlanFields,
+    updateLocalDayPlanItemFields,
     updateLocalPlaceFields,
     updateLocalPlanTotals,
     upsertLocalDayPlan,
     upsertLocalDayPlanItem,
-    upsertLocalPlace,
+    upsertLocalPlace
 } from './localDb';
-import { pullFromFirestore } from './syncService';
 
 const firestoreDb = getFirestore(firebaseApp);
 
@@ -23,6 +27,7 @@ export type DayPlanSource = 'user' | 'root';
 
 export type DayPlan = {
   id: string;
+  firestoreId?: string | null;
   title?: string;
   date?: string;
   notes?: string;
@@ -34,6 +39,8 @@ export type DayPlan = {
 
 export type DayPlanItem = {
   id: string;
+  firestoreId?: string | null;
+  dayPlanId?: string;
   placeId?: string;
   placeName?: string;
   placeLocation?: string;
@@ -48,7 +55,6 @@ export type DayPlanItem = {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ PLACES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getUserPlaces(uid: string) {
-  try { await pullFromFirestore(uid); } catch { /* offline */ }
   return getLocalPlaces(uid);
 }
 
@@ -61,6 +67,7 @@ export async function addUserPlace(uid: string, data: Record<string, unknown>) {
   try {
     const ref = await addDoc(collection(firestoreDb, `users/${uid}/places`), data);
     await markSynced('place', localId, ref.id);
+    await removeSyncEntryByLocalId(localId);
   } catch { /* will sync later via queue */ }
 }
 
@@ -93,7 +100,6 @@ export async function deleteUserPlace(
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ DAY PLANS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getUserDayPlans(uid: string): Promise<DayPlan[]> {
-  try { await pullFromFirestore(uid); } catch { /* offline */ }
   return getLocalDayPlans(uid);
 }
 
@@ -106,6 +112,7 @@ export async function addUserDayPlan(uid: string, data: Record<string, unknown>)
   try {
     const ref = await addDoc(collection(firestoreDb, `users/${uid}/day_plans`), data);
     await markSynced('day_plan', localId, ref.id);
+    await removeSyncEntryByLocalId(localId);
   } catch { /* will sync later */ }
 }
 
@@ -117,6 +124,75 @@ export async function getDayPlanItems(
   _source?: DayPlanSource,
 ): Promise<DayPlanItem[]> {
   return getLocalDayPlanItems(uid, dayPlanId);
+}
+
+export async function deleteUserDayPlan(uid: string, localId: string, firestoreId?: string | null) {
+  await deleteLocalDayPlan(localId);
+  await addToSyncQueue('delete', 'day_plan', localId, {});
+  if (firestoreId) {
+    try {
+      await deleteDoc(doc(firestoreDb, `users/${uid}/day_plans/${firestoreId}`));
+    } catch { /* will sync later */ }
+  }
+}
+
+export async function updateUserDayPlan(
+  uid: string,
+  localId: string,
+  data: { title?: string; date?: string; notes?: string },
+  firestoreId?: string | null,
+) {
+  await updateLocalDayPlanFields(localId, data);
+  await addToSyncQueue('update', 'day_plan', localId, data);
+  if (firestoreId) {
+    try {
+      await updateDoc(doc(firestoreDb, `users/${uid}/day_plans/${firestoreId}`), data);
+    } catch { /* will sync later */ }
+  }
+}
+
+export async function deleteDayPlanItem(
+  uid: string,
+  dayPlanLocalId: string,
+  itemLocalId: string,
+  itemFirestoreId?: string | null,
+) {
+  await deleteLocalDayPlanItem(itemLocalId);
+  await updateLocalPlanTotals(dayPlanLocalId);
+  await addToSyncQueue('delete', 'day_plan_item', itemLocalId, {});
+  if (itemFirestoreId) {
+    try {
+      const planFirestoreId = await getPlanFirestoreId(dayPlanLocalId);
+      if (planFirestoreId) {
+        await deleteDoc(
+          doc(firestoreDb, `users/${uid}/day_plans/${planFirestoreId}/items/${itemFirestoreId}`),
+        );
+      }
+    } catch { /* will sync later */ }
+  }
+}
+
+export async function updateDayPlanItem(
+  uid: string,
+  dayPlanLocalId: string,
+  itemLocalId: string,
+  data: { arrivalTime?: string; leaveTime?: string; amountSpent?: number; notes?: string },
+  itemFirestoreId?: string | null,
+) {
+  await updateLocalDayPlanItemFields(itemLocalId, data);
+  await updateLocalPlanTotals(dayPlanLocalId);
+  await addToSyncQueue('update', 'day_plan_item', itemLocalId, data);
+  if (itemFirestoreId) {
+    try {
+      const planFirestoreId = await getPlanFirestoreId(dayPlanLocalId);
+      if (planFirestoreId) {
+        await updateDoc(
+          doc(firestoreDb, `users/${uid}/day_plans/${planFirestoreId}/items/${itemFirestoreId}`),
+          data,
+        );
+      }
+    } catch { /* will sync later */ }
+  }
 }
 
 export async function addDayPlanItem(
@@ -142,6 +218,7 @@ export async function addDayPlanItem(
         data,
       );
       await markSynced('day_plan_item', localId, ref.id);
+      await removeSyncEntryByLocalId(localId);
       // Update Firestore plan totals
       const amount = typeof data.amountSpent === 'number' ? data.amountSpent : 0;
       try {

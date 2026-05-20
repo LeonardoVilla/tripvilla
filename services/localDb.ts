@@ -34,6 +34,24 @@ export async function upsertLocalPlace(
   firestoreId: string | null,
 ) {
   const db = await getDb();
+
+  // Se estamos sincronizando do Firestore (id === firestoreId),
+  // verificar se já existe registro local com esse firestoreId para evitar duplicata.
+  if (firestoreId && id === firestoreId) {
+    const existing = await db.getFirstAsync<{ id: string }>(
+      'SELECT id FROM places WHERE firestoreId = ?',
+      [firestoreId],
+    );
+    if (existing) {
+      // Já existe registro local vinculado a esse doc do Firestore — apenas atualiza
+      await db.runAsync(
+        `UPDATE places SET synced = 1, firestoreId = ? WHERE id = ?`,
+        [firestoreId, existing.id],
+      );
+      return;
+    }
+  }
+
   await db.runAsync(
     `INSERT OR REPLACE INTO places
      (id, uid, name, location, openTime, closeTime, travelTime, transport, createdAt, synced, firestoreId)
@@ -89,6 +107,7 @@ export async function getLocalDayPlans(uid: string) {
   );
   return rows.map((r) => ({
     id: r.id as string,
+    firestoreId: r.firestoreId as string | null | undefined,
     title: r.title as string | undefined,
     date: r.date as string | undefined,
     notes: r.notes as string | undefined,
@@ -108,6 +127,21 @@ export async function upsertLocalDayPlan(
   firestoreId: string | null,
 ) {
   const db = await getDb();
+
+  if (firestoreId && id === firestoreId) {
+    const existing = await db.getFirstAsync<{ id: string }>(
+      'SELECT id FROM day_plans WHERE firestoreId = ?',
+      [firestoreId],
+    );
+    if (existing) {
+      await db.runAsync(
+        `UPDATE day_plans SET synced = 1, firestoreId = ? WHERE id = ?`,
+        [firestoreId, existing.id],
+      );
+      return;
+    }
+  }
+
   await db.runAsync(
     `INSERT OR REPLACE INTO day_plans
      (id, uid, title, date, notes, itemCount, totalSpent, createdAt, synced, firestoreId, source)
@@ -160,6 +194,8 @@ export async function getLocalDayPlanItems(uid: string, dayPlanId: string) {
   );
   return rows.map((r) => ({
     id: r.id as string,
+    firestoreId: r.firestoreId as string | null | undefined,
+    dayPlanId: r.dayPlanId as string | undefined,
     placeId: r.placeId as string | undefined,
     placeName: r.placeName as string | undefined,
     placeLocation: r.placeLocation as string | undefined,
@@ -182,6 +218,21 @@ export async function upsertLocalDayPlanItem(
   firestoreId: string | null,
 ) {
   const db = await getDb();
+
+  if (firestoreId && id === firestoreId) {
+    const existing = await db.getFirstAsync<{ id: string }>(
+      'SELECT id FROM day_plan_items WHERE firestoreId = ?',
+      [firestoreId],
+    );
+    if (existing) {
+      await db.runAsync(
+        `UPDATE day_plan_items SET synced = 1, firestoreId = ? WHERE id = ?`,
+        [firestoreId, existing.id],
+      );
+      return;
+    }
+  }
+
   await db.runAsync(
     `INSERT OR REPLACE INTO day_plan_items
      (id, uid, dayPlanId, placeId, placeName, placeLocation, arrivalTime, leaveTime,
@@ -196,6 +247,48 @@ export async function upsertLocalDayPlanItem(
       synced ? 1 : 0, firestoreId, data._source ?? 'user',
     ],
   );
+}
+
+export async function deleteLocalDayPlan(id: string) {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM day_plans WHERE id = ?', [id]);
+}
+
+export async function updateLocalDayPlanFields(id: string, data: Record<string, any>) {
+  const db = await getDb();
+  await db.runAsync(
+    'UPDATE day_plans SET title=?, date=?, notes=? WHERE id=?',
+    [data.title ?? null, data.date ?? null, data.notes ?? null, id],
+  );
+}
+
+export async function deleteLocalDayPlanItem(id: string) {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM day_plan_items WHERE id = ?', [id]);
+}
+
+export async function updateLocalDayPlanItemFields(id: string, data: Record<string, any>) {
+  const db = await getDb();
+  await db.runAsync(
+    'UPDATE day_plan_items SET arrivalTime=?, leaveTime=?, amountSpent=?, notes=? WHERE id=?',
+    [data.arrivalTime ?? null, data.leaveTime ?? null, data.amountSpent ?? 0, data.notes ?? null, id],
+  );
+}
+
+export async function getItemFirestoreId(localId: string): Promise<string | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ firestoreId: string | null }>(
+    'SELECT firestoreId FROM day_plan_items WHERE id = ?', [localId],
+  );
+  return row?.firestoreId ?? null;
+}
+
+export async function getItemDayPlanLocalId(itemLocalId: string): Promise<string | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ dayPlanId: string | null }>(
+    'SELECT dayPlanId FROM day_plan_items WHERE id = ?', [itemLocalId],
+  );
+  return row?.dayPlanId ?? null;
 }
 
 // ─────────────────────── GENERIC MARK SYNCED ───────────────────────
@@ -252,6 +345,11 @@ export async function getSyncQueue(): Promise<Array<{
 export async function removeSyncEntry(id: string) {
   const db = await getDb();
   await db.runAsync('DELETE FROM pending_sync WHERE id = ?', [id]);
+}
+
+export async function removeSyncEntryByLocalId(localId: string) {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM pending_sync WHERE localId = ?', [localId]);
 }
 
 export async function pendingSyncCount(): Promise<number> {

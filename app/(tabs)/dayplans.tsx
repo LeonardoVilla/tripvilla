@@ -17,9 +17,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 
-import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import { firebaseApp } from '@/firebaseInit';
-import { addUserDayPlan, DayPlan, getUserDayPlans } from '@/services/firestoreService';
+import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
+import { addUserDayPlan, DayPlan, deleteUserDayPlan, getUserDayPlans, updateUserDayPlan } from '@/services/firestoreService';
+import { pullFromFirestore } from '@/services/syncService';
 
 const TEAL = '#1f7a6f';
 const BG = '#eaf4f2';
@@ -47,6 +48,13 @@ export default function DayPlansScreen() {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
 
+  const [optionsPlanId, setOptionsPlanId] = useState<string | null>(null);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<DayPlan | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+
   const getUid = () => getAuth(firebaseApp).currentUser?.uid;
 
   const loadPlans = async () => {
@@ -62,6 +70,21 @@ export default function DayPlansScreen() {
         text1: 'Erro',
         text2: getFirebaseErrorMessage(err, 'Falha ao carregar roles.'),
       });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSync = async () => {
+    try {
+      setLoading(true);
+      const uid = getUid();
+      if (!uid) return;
+      await pullFromFirestore(uid);
+      const data = await getUserDayPlans(uid);
+      setPlans(data);
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Erro', text2: getFirebaseErrorMessage(err, 'Falha ao sincronizar.') });
     } finally {
       setLoading(false);
     }
@@ -121,12 +144,66 @@ export default function DayPlansScreen() {
     );
   };
 
+  const openEditPlanModal = (plan: DayPlan) => {
+    setEditingPlan(plan);
+    setEditTitle(plan.title ?? '');
+    setEditDate(plan.date ?? new Date().toISOString().slice(0, 10));
+    setEditNotes(plan.notes ?? '');
+    setOptionsPlanId(null);
+    setEditModalVisible(true);
+  };
+
+  const handleUpdatePlan = async () => {
+    if (!editTitle.trim()) {
+      Toast.show({ type: 'error', text1: 'Titulo obrigatorio' });
+      return;
+    }
+    try {
+      setSaving(true);
+      const uid = getUid();
+      if (!uid || !editingPlan) return;
+      await updateUserDayPlan(uid, editingPlan.id, {
+        title: editTitle.trim(),
+        date: editDate,
+        notes: editNotes.trim(),
+      }, editingPlan.firestoreId);
+      Toast.show({ type: 'success', text1: 'Role atualizado!' });
+      setEditModalVisible(false);
+      await loadPlans();
+    } catch (err) {
+      Toast.show({
+        type: 'error',
+        text1: 'Erro ao atualizar',
+        text2: getFirebaseErrorMessage(err, 'Nao foi possivel atualizar.'),
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeletePlan = async (plan: DayPlan) => {
+    setOptionsPlanId(null);
+    const uid = getUid();
+    if (!uid) return;
+    try {
+      await deleteUserDayPlan(uid, plan.id, plan.firestoreId);
+      setPlans((prev) => prev.filter((p) => p.id !== plan.id));
+      Toast.show({ type: 'success', text1: 'Role excluido.' });
+    } catch (err) {
+      Toast.show({
+        type: 'error',
+        text1: 'Erro ao excluir',
+        text2: getFirebaseErrorMessage(err, 'Nao foi possivel excluir.'),
+      });
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <Text style={styles.headerTitle}>Role do dia</Text>
         <View style={styles.headerActions}>
-          <Pressable onPress={loadPlans} style={styles.iconBtn}>
+          <Pressable onPress={handleSync} style={styles.iconBtn}>
             <Ionicons name="sync-outline" size={24} color="#333" />
           </Pressable>
           <Pressable onPress={handleLogout} style={styles.iconBtn}>
@@ -150,9 +227,23 @@ export default function DayPlansScreen() {
                 <Text style={styles.cardDetail}>Locais escolhidos: {item.itemCount ?? 0}</Text>
                 <Text style={styles.cardDetail}>Gasto do dia: {formatCurrency(item.totalSpent)}</Text>
               </View>
-              <Pressable style={styles.moreBtn}>
-                <Ionicons name="ellipsis-vertical" size={20} color="#666" />
-              </Pressable>
+              <View style={styles.moreBtn}>
+                <Pressable onPress={() => setOptionsPlanId(optionsPlanId === item.id ? null : item.id)}>
+                  <Ionicons name="ellipsis-vertical" size={20} color="#666" />
+                </Pressable>
+                {optionsPlanId === item.id && (
+                  <View style={styles.optionsMenu}>
+                    <Pressable style={styles.optionsMenuItem} onPress={() => openEditPlanModal(item)}>
+                      <Ionicons name="create-outline" size={16} color="#333" />
+                      <Text style={styles.optionsMenuText}>Editar</Text>
+                    </Pressable>
+                    <Pressable style={styles.optionsMenuItem} onPress={() => handleDeletePlan(item)}>
+                      <Ionicons name="trash-outline" size={16} color="#e53935" />
+                      <Text style={[styles.optionsMenuText, { color: '#e53935' }]}>Excluir</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
             </Pressable>
           )}
           ListEmptyComponent={<Text style={styles.empty}>Nenhum role cadastrado ainda.</Text>}
@@ -205,6 +296,48 @@ export default function DayPlansScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <Modal
+        visible={editModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.overlay}
+        >
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditModalVisible(false)} />
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Editar role</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Titulo do role"
+              value={editTitle}
+              onChangeText={setEditTitle}
+            />
+            <Pressable style={styles.datePicker}>
+              <Ionicons name="calendar-outline" size={16} color={TEAL} />
+              <Text style={styles.dateText}>Data: {formatDate(editDate)}</Text>
+            </Pressable>
+            <TextInput
+              style={[styles.input, styles.multiline]}
+              placeholder="Observacoes do dia"
+              value={editNotes}
+              onChangeText={setEditNotes}
+              multiline
+            />
+            <Pressable
+              style={[styles.saveBtn, saving && { opacity: 0.7 }]}
+              onPress={handleUpdatePlan}
+              disabled={saving}
+            >
+              <Ionicons name="save-outline" size={18} color="#fff" />
+              <Text style={styles.saveBtnText}>{saving ? 'Salvando...' : 'Salvar alteracoes'}</Text>
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -238,7 +371,29 @@ const styles = StyleSheet.create({
   cardContent: { flex: 1 },
   cardName: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginBottom: 4 },
   cardDetail: { fontSize: 13, color: '#555', marginBottom: 2 },
-  moreBtn: { paddingLeft: 8, paddingTop: 2 },
+  moreBtn: { paddingLeft: 8, paddingTop: 2, position: 'relative', alignItems: 'center' },
+  optionsMenu: {
+    position: 'absolute',
+    right: 0,
+    top: 24,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    paddingVertical: 4,
+    minWidth: 120,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    zIndex: 100,
+  },
+  optionsMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  optionsMenuText: { fontSize: 14, color: '#333' },
   empty: { textAlign: 'center', color: '#888', marginTop: 40 },
   fab: {
     position: 'absolute',
