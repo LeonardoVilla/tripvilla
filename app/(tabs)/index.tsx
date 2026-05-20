@@ -1,14 +1,13 @@
 import { StyleSheet } from 'react-native';
 
-import EditScreenInfo from '@/components/EditScreenInfo';
 import { Text, View } from '@/components/Themed';
 
 export default function TabOneScreen() {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Tab One</Text>
-      <View style={styles.separator} lightColor="#eee" darkColor="rgba(255,255,255,0.1)" />
-      <EditScreenInfo path="app/(tabs)/index.tsx" />
+      <Text style={styles.title}>Tripvilla</Text>
+      <Text style={styles.subtitle}>Seu roteiro de viagem em um so lugar.</Text>
+      <Text style={styles.subtitle}>Use as abas para gerenciar locais, roles e relatorios.</Text>
     </View>
   );
 }
@@ -20,12 +19,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
+    marginBottom: 16,
   },
-  separator: {
-    marginVertical: 30,
-    height: 1,
-    width: '80%',
+  subtitle: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 20,
   },
 });
