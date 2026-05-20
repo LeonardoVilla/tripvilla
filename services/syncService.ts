@@ -1,52 +1,61 @@
-import { addDoc, collection, getDocs, getFirestore } from 'firebase/firestore';
 import { firebaseApp } from '@/firebaseInit';
+import { addDoc, collection, getDocs, getFirestore } from 'firebase/firestore';
 import {
-  getPlanFirestoreId,
-  getSyncQueue,
-  markSynced,
-  removeSyncEntry,
-  upsertLocalDayPlan,
-  upsertLocalDayPlanItem,
-  upsertLocalPlace,
+    getPlanFirestoreId,
+    getSyncQueue,
+    markSynced,
+    removeSyncEntry,
+    upsertLocalDayPlan,
+    upsertLocalDayPlanItem,
+    upsertLocalPlace,
 } from './localDb';
 
 const firestoreDb = getFirestore(firebaseApp);
 
+// Lock para evitar pulls simultâneos (race condition → duplicatas)
+let _pulling = false;
+
 /** Pull all Firestore data into SQLite (used on first login and manual refresh). */
 export async function pullFromFirestore(uid: string): Promise<void> {
-  // Places
+  if (_pulling) return;
+  _pulling = true;
   try {
-    const snap = await getDocs(collection(firestoreDb, `users/${uid}/places`));
-    for (const d of snap.docs) {
-      await upsertLocalPlace(uid, d.id, d.data() as Record<string, any>, true, d.id);
+    // Places
+    try {
+      const snap = await getDocs(collection(firestoreDb, `users/${uid}/places`));
+      for (const d of snap.docs) {
+        await upsertLocalPlace(uid, d.id, d.data() as Record<string, any>, true, d.id);
+      }
+    } catch {
+      // Permission denied or offline — ignore
     }
-  } catch {
-    // Permission denied or offline — ignore
-  }
 
-  // Day plans + their items
-  try {
-    const plansSnap = await getDocs(collection(firestoreDb, `users/${uid}/day_plans`));
-    for (const planDoc of plansSnap.docs) {
-      await upsertLocalDayPlan(
-        uid, planDoc.id,
-        { ...planDoc.data(), _source: 'user' } as Record<string, any>,
-        true, planDoc.id,
-      );
-      try {
-        const itemsSnap = await getDocs(
-          collection(firestoreDb, `users/${uid}/day_plans/${planDoc.id}/items`),
+    // Day plans + their items
+    try {
+      const plansSnap = await getDocs(collection(firestoreDb, `users/${uid}/day_plans`));
+      for (const planDoc of plansSnap.docs) {
+        await upsertLocalDayPlan(
+          uid, planDoc.id,
+          { ...planDoc.data(), _source: 'user' } as Record<string, any>,
+          true, planDoc.id,
         );
-        for (const itemDoc of itemsSnap.docs) {
-          await upsertLocalDayPlanItem(
-            uid, planDoc.id, itemDoc.id,
-            { ...itemDoc.data(), _source: 'user' } as Record<string, any>,
-            true, itemDoc.id,
+        try {
+          const itemsSnap = await getDocs(
+            collection(firestoreDb, `users/${uid}/day_plans/${planDoc.id}/items`),
           );
-        }
-      } catch { /* ignore item fetch errors */ }
-    }
-  } catch { /* ignore */ }
+          for (const itemDoc of itemsSnap.docs) {
+            await upsertLocalDayPlanItem(
+              uid, planDoc.id, itemDoc.id,
+              { ...itemDoc.data(), _source: 'user' } as Record<string, any>,
+              true, itemDoc.id,
+            );
+          }
+        } catch { /* ignore item fetch errors */ }
+      }
+    } catch { /* ignore */ }
+  } finally {
+    _pulling = false;
+  }
 }
 
 /**

@@ -6,22 +6,20 @@ import {
     deleteLocalDayPlanItem,
     deleteLocalPlace,
     genLocalId,
-    getItemDayPlanLocalId,
-    getItemFirestoreId,
     getLocalDayPlanItems,
     getLocalDayPlans,
     getLocalPlaces,
     getPlanFirestoreId,
     markSynced,
+    removeSyncEntryByLocalId,
     updateLocalDayPlanFields,
     updateLocalDayPlanItemFields,
     updateLocalPlaceFields,
     updateLocalPlanTotals,
     upsertLocalDayPlan,
     upsertLocalDayPlanItem,
-    upsertLocalPlace,
+    upsertLocalPlace
 } from './localDb';
-import { pullFromFirestore } from './syncService';
 
 const firestoreDb = getFirestore(firebaseApp);
 
@@ -57,7 +55,6 @@ export type DayPlanItem = {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ PLACES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getUserPlaces(uid: string) {
-  try { await pullFromFirestore(uid); } catch { /* offline */ }
   return getLocalPlaces(uid);
 }
 
@@ -70,6 +67,7 @@ export async function addUserPlace(uid: string, data: Record<string, unknown>) {
   try {
     const ref = await addDoc(collection(firestoreDb, `users/${uid}/places`), data);
     await markSynced('place', localId, ref.id);
+    await removeSyncEntryByLocalId(localId);
   } catch { /* will sync later via queue */ }
 }
 
@@ -102,7 +100,6 @@ export async function deleteUserPlace(
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ DAY PLANS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getUserDayPlans(uid: string): Promise<DayPlan[]> {
-  try { await pullFromFirestore(uid); } catch { /* offline */ }
   return getLocalDayPlans(uid);
 }
 
@@ -115,6 +112,7 @@ export async function addUserDayPlan(uid: string, data: Record<string, unknown>)
   try {
     const ref = await addDoc(collection(firestoreDb, `users/${uid}/day_plans`), data);
     await markSynced('day_plan', localId, ref.id);
+    await removeSyncEntryByLocalId(localId);
   } catch { /* will sync later */ }
 }
 
@@ -220,6 +218,7 @@ export async function addDayPlanItem(
         data,
       );
       await markSynced('day_plan_item', localId, ref.id);
+      await removeSyncEntryByLocalId(localId);
       // Update Firestore plan totals
       const amount = typeof data.amountSpent === 'number' ? data.amountSpent : 0;
       try {

@@ -1,15 +1,14 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import NetInfo from '@react-native-community/netinfo';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { getAuth, onAuthStateChanged, type User } from 'firebase/auth';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import 'react-native-reanimated';
 import Toast from 'react-native-toast-message';
 
 import { useColorScheme } from '@/components/useColorScheme';
-import { firebaseApp } from '@/firebaseInit';
+import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { getDb } from '@/services/db';
 import { pullFromFirestore, pushQueueToFirestore } from '@/services/syncService';
 
@@ -19,7 +18,6 @@ export {
 } from 'expo-router';
 
 export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
   initialRouteName: '(tabs)',
 };
 
@@ -31,7 +29,6 @@ export default function RootLayout() {
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
 
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
     if (error) throw error;
   }, [error]);
@@ -46,34 +43,32 @@ export default function RootLayout() {
     return null;
   }
 
-  return <RootLayoutNav />;
+  return (
+    <AuthProvider>
+      <RootLayoutNav />
+    </AuthProvider>
+  );
 }
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
   const router = useRouter();
   const segments = useSegments();
-  const [authReady, setAuthReady] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
+  const { user, loading: authLoading } = useAuth();
   const dbInitialized = useRef(false);
 
+  // Initialize SQLite and pull Firestore data on first login
   useEffect(() => {
-    const auth = getAuth(firebaseApp);
-    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
-      setUser(nextUser);
-      setAuthReady(true);
-
-      // Initialize SQLite and pull Firestore data on first login
-      if (nextUser && !dbInitialized.current) {
-        dbInitialized.current = true;
-        getDb()
-          .then(() => pullFromFirestore(nextUser.uid))
-          .catch(() => {});
-      }
-    });
-
-    return unsubscribe;
-  }, []);
+    if (user && !dbInitialized.current) {
+      dbInitialized.current = true;
+      getDb()
+        .then(() => pullFromFirestore(user.uid))
+        .catch(() => {});
+    }
+    if (!user) {
+      dbInitialized.current = false;
+    }
+  }, [user]);
 
   // Push pending sync queue whenever connectivity is restored
   useEffect(() => {
@@ -85,10 +80,9 @@ function RootLayoutNav() {
     return unsubscribe;
   }, [user]);
 
+  // Auth redirect guard
   useEffect(() => {
-    if (!authReady) {
-      return;
-    }
+    if (authLoading) return;
 
     const inAuthGroup = segments[0] === 'auth';
 
@@ -98,11 +92,12 @@ function RootLayoutNav() {
     }
 
     if (user && inAuthGroup) {
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/places');
     }
-  }, [authReady, user, segments, router]);
+  }, [authLoading, user, segments, router]);
 
-  if (!authReady) {
+  // Aguarda resolução do estado de autenticação antes de renderizar
+  if (authLoading) {
     return null;
   }
 
@@ -120,3 +115,4 @@ function RootLayoutNav() {
     </ThemeProvider>
   );
 }
+

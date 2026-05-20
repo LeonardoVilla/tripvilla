@@ -34,6 +34,24 @@ export async function upsertLocalPlace(
   firestoreId: string | null,
 ) {
   const db = await getDb();
+
+  // Se estamos sincronizando do Firestore (id === firestoreId),
+  // verificar se já existe registro local com esse firestoreId para evitar duplicata.
+  if (firestoreId && id === firestoreId) {
+    const existing = await db.getFirstAsync<{ id: string }>(
+      'SELECT id FROM places WHERE firestoreId = ?',
+      [firestoreId],
+    );
+    if (existing) {
+      // Já existe registro local vinculado a esse doc do Firestore — apenas atualiza
+      await db.runAsync(
+        `UPDATE places SET synced = 1, firestoreId = ? WHERE id = ?`,
+        [firestoreId, existing.id],
+      );
+      return;
+    }
+  }
+
   await db.runAsync(
     `INSERT OR REPLACE INTO places
      (id, uid, name, location, openTime, closeTime, travelTime, transport, createdAt, synced, firestoreId)
@@ -109,6 +127,21 @@ export async function upsertLocalDayPlan(
   firestoreId: string | null,
 ) {
   const db = await getDb();
+
+  if (firestoreId && id === firestoreId) {
+    const existing = await db.getFirstAsync<{ id: string }>(
+      'SELECT id FROM day_plans WHERE firestoreId = ?',
+      [firestoreId],
+    );
+    if (existing) {
+      await db.runAsync(
+        `UPDATE day_plans SET synced = 1, firestoreId = ? WHERE id = ?`,
+        [firestoreId, existing.id],
+      );
+      return;
+    }
+  }
+
   await db.runAsync(
     `INSERT OR REPLACE INTO day_plans
      (id, uid, title, date, notes, itemCount, totalSpent, createdAt, synced, firestoreId, source)
@@ -185,6 +218,21 @@ export async function upsertLocalDayPlanItem(
   firestoreId: string | null,
 ) {
   const db = await getDb();
+
+  if (firestoreId && id === firestoreId) {
+    const existing = await db.getFirstAsync<{ id: string }>(
+      'SELECT id FROM day_plan_items WHERE firestoreId = ?',
+      [firestoreId],
+    );
+    if (existing) {
+      await db.runAsync(
+        `UPDATE day_plan_items SET synced = 1, firestoreId = ? WHERE id = ?`,
+        [firestoreId, existing.id],
+      );
+      return;
+    }
+  }
+
   await db.runAsync(
     `INSERT OR REPLACE INTO day_plan_items
      (id, uid, dayPlanId, placeId, placeName, placeLocation, arrivalTime, leaveTime,
@@ -297,6 +345,11 @@ export async function getSyncQueue(): Promise<Array<{
 export async function removeSyncEntry(id: string) {
   const db = await getDb();
   await db.runAsync('DELETE FROM pending_sync WHERE id = ?', [id]);
+}
+
+export async function removeSyncEntryByLocalId(localId: string) {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM pending_sync WHERE localId = ?', [localId]);
 }
 
 export async function pendingSyncCount(): Promise<number> {

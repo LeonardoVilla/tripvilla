@@ -71,6 +71,55 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
         );
       `);
 
+      // Remove duplicatas geradas por race condition:
+      // Quando pullFromFirestore criou um segundo registro com id=firestoreId,
+      // sendo que já existia um local com id='local_xxx' e firestoreId=mesmo valor.
+      await db.execAsync(`
+        DELETE FROM places
+        WHERE id = firestoreId
+          AND firestoreId IN (
+            SELECT firestoreId FROM places
+            WHERE id LIKE 'local_%' AND firestoreId IS NOT NULL
+          );
+      `);
+      await db.execAsync(`
+        DELETE FROM day_plans
+        WHERE id = firestoreId
+          AND firestoreId IN (
+            SELECT firestoreId FROM day_plans
+            WHERE id LIKE 'local_%' AND firestoreId IS NOT NULL
+          );
+      `);
+      await db.execAsync(`
+        DELETE FROM day_plan_items
+        WHERE id = firestoreId
+          AND firestoreId IN (
+            SELECT firestoreId FROM day_plan_items
+            WHERE id LIKE 'local_%' AND firestoreId IS NOT NULL
+          );
+      `);
+
+      // Remove sync queue entries for records already synced (firestoreId set)
+      // These were left behind by the bug where immediate sync succeeded but didn't remove the queue entry.
+      await db.execAsync(`
+        DELETE FROM pending_sync
+        WHERE operation = 'create'
+          AND entity = 'place'
+          AND localId IN (SELECT id FROM places WHERE synced = 1 AND firestoreId IS NOT NULL);
+      `);
+      await db.execAsync(`
+        DELETE FROM pending_sync
+        WHERE operation = 'create'
+          AND entity = 'day_plan'
+          AND localId IN (SELECT id FROM day_plans WHERE synced = 1 AND firestoreId IS NOT NULL);
+      `);
+      await db.execAsync(`
+        DELETE FROM pending_sync
+        WHERE operation = 'create'
+          AND entity = 'day_plan_item'
+          AND localId IN (SELECT id FROM day_plan_items WHERE synced = 1 AND firestoreId IS NOT NULL);
+      `);
+
       return db;
     })();
   }

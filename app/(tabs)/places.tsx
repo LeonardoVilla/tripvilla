@@ -20,6 +20,7 @@ import Toast from 'react-native-toast-message';
 import { firebaseApp } from '@/firebaseInit';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import { addUserPlace, deleteUserPlace, getUserPlaces, updateUserPlace } from '@/services/firestoreService';
+import { pullFromFirestore } from '@/services/syncService';
 
 const TEAL = '#1f7a6f';
 const BG = '#eaf4f2';
@@ -58,6 +59,21 @@ export default function PlacesScreen() {
       setLoading(true);
       const uid = getUid();
       if (!uid) return;
+      const data = (await getUserPlaces(uid)) as Place[];
+      setPlaces(data);
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Erro', text2: getFirebaseErrorMessage(err, 'Falha ao carregar locais.') });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSync = async () => {
+    try {
+      setLoading(true);
+      const uid = getUid();
+      if (!uid) return;
+      await pullFromFirestore(uid);
       const data = (await getUserPlaces(uid)) as Place[];
       setPlaces(data);
     } catch (err) {
@@ -167,7 +183,7 @@ export default function PlacesScreen() {
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <Text style={styles.headerTitle}>Locais cadastrados</Text>
         <View style={styles.headerActions}>
-          <Pressable onPress={loadPlaces} style={styles.iconBtn}>
+          <Pressable onPress={handleSync} style={styles.iconBtn}>
             <Ionicons name="sync-outline" size={24} color="#333" />
           </Pressable>
           <Pressable onPress={handleLogout} style={styles.iconBtn}>
