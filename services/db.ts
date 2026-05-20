@@ -71,6 +71,17 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
         );
       `);
 
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS buddies (
+          id TEXT PRIMARY KEY,
+          ownerUid TEXT NOT NULL,
+          email TEXT NOT NULL,
+          role TEXT NOT NULL,
+          addedAt TEXT,
+          firestoreId TEXT
+        );
+      `);
+
       // Remove duplicatas geradas por race condition:
       // Quando pullFromFirestore criou um segundo registro com id=firestoreId,
       // sendo que já existia um local com id='local_xxx' e firestoreId=mesmo valor.
