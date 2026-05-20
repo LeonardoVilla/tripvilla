@@ -1,7 +1,8 @@
+import { useFocusRefresh } from '@/hooks/use-focus-refresh';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { getAuth, signOut } from 'firebase/auth';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -68,7 +69,7 @@ export default function PlacesScreen() {
     }
   };
 
-  const handleSync = async () => {
+  const handleSync = useCallback(async () => {
     try {
       setLoading(true);
       const uid = getUid();
@@ -85,11 +86,9 @@ export default function PlacesScreen() {
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadPlaces();
   }, []);
+
+  useFocusRefresh(handleSync);
 
   const resetForm = () => {
     setEditingPlace(null);
