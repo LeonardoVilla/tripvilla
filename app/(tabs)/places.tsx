@@ -242,7 +242,17 @@ export default function PlacesScreen() {
               </View>
             </View>
           )}
-          ListEmptyComponent={<Text style={styles.empty}>Nenhum local cadastrado ainda.</Text>}
+          ListEmptyComponent={
+            !loading ? (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.empty}>Nenhum local carregado.</Text>
+                <Pressable style={styles.btnLoad} onPress={handleSync}>
+                  <Ionicons name="cloud-download-outline" size={22} color="#fff" />
+                  <Text style={styles.btnLoadText}>Exibir Locais</Text>
+                </Pressable>
+              </View>
+            ) : null
+          }
         />
       )}
 
@@ -364,6 +374,18 @@ const styles = StyleSheet.create({
   },
   optionsMenuText: { fontSize: 14, color: '#333' },
   empty: { textAlign: 'center', color: '#888', marginTop: 40 },
+  emptyContainer: { alignItems: 'center', marginTop: 40 },
+  btnLoad: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: TEAL,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    marginTop: 20,
+    gap: 8,
+  },
+  btnLoadText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   fab: {
     position: 'absolute',
     bottom: 24,
