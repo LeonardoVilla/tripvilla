@@ -1,21 +1,27 @@
 ﻿import { firebaseApp } from '@/firebaseInit';
-import { addDoc, collection, deleteDoc, doc, getFirestore, increment, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, getFirestore, increment, updateDoc } from 'firebase/firestore';
 import {
     addToSyncQueue,
+    Buddy,
+    BuddyRole,
+    deleteLocalBuddy,
     deleteLocalDayPlan,
     deleteLocalDayPlanItem,
     deleteLocalPlace,
     genLocalId,
+    getLocalBuddies,
     getLocalDayPlanItems,
     getLocalDayPlans,
     getLocalPlaces,
     getPlanFirestoreId,
     markSynced,
     removeSyncEntryByLocalId,
+    updateLocalBuddyFirestoreId,
     updateLocalDayPlanFields,
     updateLocalDayPlanItemFields,
     updateLocalPlaceFields,
     updateLocalPlanTotals,
+    upsertLocalBuddy,
     upsertLocalDayPlan,
     upsertLocalDayPlanItem,
     upsertLocalPlace
@@ -231,3 +237,60 @@ export async function addDayPlanItem(
   } catch { /* will sync later */ }
 }
 
+// ─────────────────────── BUDDIES ───────────────────────
+
+export { Buddy, BuddyRole };
+
+export async function getBuddies(ownerUid: string): Promise<Buddy[]> {
+  try {
+    const snap = await getDocs(collection(firestoreDb, `users/${ownerUid}/buddies`));
+    for (const d of snap.docs) {
+      const data = d.data() as Record<string, any>;
+      await upsertLocalBuddy(ownerUid, d.id, data.email, data.role, d.id);
+    }
+  } catch { /* offline */ }
+  return getLocalBuddies(ownerUid);
+}
+
+export async function addBuddy(
+  ownerUid: string,
+  email: string,
+  role: BuddyRole,
+): Promise<void> {
+  const localId = genLocalId();
+  await upsertLocalBuddy(ownerUid, localId, email, role, null);
+  try {
+    const ref = await addDoc(collection(firestoreDb, `users/${ownerUid}/buddies`), {
+      email,
+      role,
+      addedAt: new Date().toISOString(),
+    });
+    await updateLocalBuddyFirestoreId(localId, ref.id);
+  } catch { /* will sync later */ }
+}
+
+export async function removeBuddy(
+  ownerUid: string,
+  buddyId: string,
+  firestoreId?: string | null,
+): Promise<void> {
+  await deleteLocalBuddy(buddyId);
+  const target = firestoreId ?? buddyId;
+  try {
+    await deleteDoc(doc(firestoreDb, `users/${ownerUid}/buddies/${target}`));
+  } catch { /* offline */ }
+}
+
+export async function updateBuddyRole(
+  ownerUid: string,
+  buddyId: string,
+  role: BuddyRole,
+  firestoreId?: string | null,
+): Promise<void> {
+  const db = await import('./db').then((m) => m.getDb());
+  await db.runAsync('UPDATE buddies SET role = ? WHERE id = ?', [role, buddyId]);
+  const target = firestoreId ?? buddyId;
+  try {
+    await updateDoc(doc(firestoreDb, `users/${ownerUid}/buddies/${target}`), { role });
+  } catch { /* offline */ }
+}

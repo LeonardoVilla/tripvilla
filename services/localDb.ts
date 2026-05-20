@@ -357,3 +357,57 @@ export async function pendingSyncCount(): Promise<number> {
   const row = await db.getFirstAsync<{ cnt: number }>('SELECT COUNT(*) as cnt FROM pending_sync');
   return row?.cnt ?? 0;
 }
+
+// ─────────────────────── BUDDIES ───────────────────────
+
+export type BuddyRole = 'admin' | 'user';
+
+export type Buddy = {
+  id: string;
+  ownerUid: string;
+  email: string;
+  role: BuddyRole;
+  addedAt?: string;
+  firestoreId?: string | null;
+};
+
+export async function getLocalBuddies(ownerUid: string): Promise<Buddy[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<Record<string, any>>(
+    'SELECT * FROM buddies WHERE ownerUid = ? ORDER BY addedAt DESC',
+    [ownerUid],
+  );
+  return rows.map((r) => ({
+    id: r.id as string,
+    ownerUid: r.ownerUid as string,
+    email: r.email as string,
+    role: r.role as BuddyRole,
+    addedAt: r.addedAt as string | undefined,
+    firestoreId: r.firestoreId as string | null | undefined,
+  }));
+}
+
+export async function upsertLocalBuddy(
+  ownerUid: string,
+  id: string,
+  email: string,
+  role: BuddyRole,
+  firestoreId: string | null,
+): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT OR REPLACE INTO buddies (id, ownerUid, email, role, addedAt, firestoreId)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [id, ownerUid, email, role, new Date().toISOString(), firestoreId],
+  );
+}
+
+export async function deleteLocalBuddy(id: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM buddies WHERE id = ?', [id]);
+}
+
+export async function updateLocalBuddyFirestoreId(localId: string, firestoreId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE buddies SET firestoreId = ? WHERE id = ?', [firestoreId, localId]);
+}
