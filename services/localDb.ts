@@ -89,6 +89,7 @@ export async function getLocalDayPlans(uid: string) {
   );
   return rows.map((r) => ({
     id: r.id as string,
+    firestoreId: r.firestoreId as string | null | undefined,
     title: r.title as string | undefined,
     date: r.date as string | undefined,
     notes: r.notes as string | undefined,
@@ -160,6 +161,8 @@ export async function getLocalDayPlanItems(uid: string, dayPlanId: string) {
   );
   return rows.map((r) => ({
     id: r.id as string,
+    firestoreId: r.firestoreId as string | null | undefined,
+    dayPlanId: r.dayPlanId as string | undefined,
     placeId: r.placeId as string | undefined,
     placeName: r.placeName as string | undefined,
     placeLocation: r.placeLocation as string | undefined,
@@ -196,6 +199,48 @@ export async function upsertLocalDayPlanItem(
       synced ? 1 : 0, firestoreId, data._source ?? 'user',
     ],
   );
+}
+
+export async function deleteLocalDayPlan(id: string) {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM day_plans WHERE id = ?', [id]);
+}
+
+export async function updateLocalDayPlanFields(id: string, data: Record<string, any>) {
+  const db = await getDb();
+  await db.runAsync(
+    'UPDATE day_plans SET title=?, date=?, notes=? WHERE id=?',
+    [data.title ?? null, data.date ?? null, data.notes ?? null, id],
+  );
+}
+
+export async function deleteLocalDayPlanItem(id: string) {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM day_plan_items WHERE id = ?', [id]);
+}
+
+export async function updateLocalDayPlanItemFields(id: string, data: Record<string, any>) {
+  const db = await getDb();
+  await db.runAsync(
+    'UPDATE day_plan_items SET arrivalTime=?, leaveTime=?, amountSpent=?, notes=? WHERE id=?',
+    [data.arrivalTime ?? null, data.leaveTime ?? null, data.amountSpent ?? 0, data.notes ?? null, id],
+  );
+}
+
+export async function getItemFirestoreId(localId: string): Promise<string | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ firestoreId: string | null }>(
+    'SELECT firestoreId FROM day_plan_items WHERE id = ?', [localId],
+  );
+  return row?.firestoreId ?? null;
+}
+
+export async function getItemDayPlanLocalId(itemLocalId: string): Promise<string | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ dayPlanId: string | null }>(
+    'SELECT dayPlanId FROM day_plan_items WHERE id = ?', [itemLocalId],
+  );
+  return row?.dayPlanId ?? null;
 }
 
 // ─────────────────────── GENERIC MARK SYNCED ───────────────────────

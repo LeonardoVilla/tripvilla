@@ -4,7 +4,6 @@ import { getAuth, signOut } from 'firebase/auth';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -44,6 +43,7 @@ export default function PlacesScreen() {
   const [places, setPlaces] = useState<Place[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingPlace, setEditingPlace] = useState<Place | null>(null);
+  const [optionsPlaceId, setOptionsPlaceId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [location, setLocation] = useState('');
   const [openingTime, setOpeningTime] = useState('09:00');
@@ -96,38 +96,21 @@ export default function PlacesScreen() {
     setModalVisible(true);
   };
 
-  const handleOptions = (place: Place) => {
-    Alert.alert(place.name ?? 'Local', undefined, [
-      { text: 'Editar', onPress: () => openEditModal(place) },
-      {
-        text: 'Excluir',
-        style: 'destructive',
-        onPress: () =>
-          Alert.alert('Excluir local', `Deseja excluir "${place.name}"?`, [
-            { text: 'Cancelar', style: 'cancel' },
-            {
-              text: 'Excluir',
-              style: 'destructive',
-              onPress: async () => {
-                const uid = getUid();
-                if (!uid) return;
-                try {
-                  await deleteUserPlace(uid, place.id, place.firestoreId);
-                  setPlaces((prev) => prev.filter((p) => p.id !== place.id));
-                  Toast.show({ type: 'success', text1: 'Local excluido.' });
-                } catch (err) {
-                  Toast.show({
-                    type: 'error',
-                    text1: 'Erro ao excluir',
-                    text2: getFirebaseErrorMessage(err, 'Nao foi possivel excluir.'),
-                  });
-                }
-              },
-            },
-          ]),
-      },
-      { text: 'Cancelar', style: 'cancel' },
-    ]);
+  const handleDeletePlace = async (place: Place) => {
+    setOptionsPlaceId(null);
+    const uid = getUid();
+    if (!uid) return;
+    try {
+      await deleteUserPlace(uid, place.id, place.firestoreId);
+      setPlaces((prev) => prev.filter((p) => p.id !== place.id));
+      Toast.show({ type: 'success', text1: 'Local excluido.' });
+    } catch (err) {
+      Toast.show({
+        type: 'error',
+        text1: 'Erro ao excluir',
+        text2: getFirebaseErrorMessage(err, 'Nao foi possivel excluir.'),
+      });
+    }
   };
 
   const handleSave = async () => {
@@ -219,9 +202,27 @@ export default function PlacesScreen() {
               </View>
               <View style={styles.cardActions}>
                 <Ionicons name="cloud-outline" size={20} color={TEAL} />
-                <Pressable style={{ marginTop: 8 }} onPress={() => handleOptions(item)}>
+                <Pressable style={{ marginTop: 8 }} onPress={() => setOptionsPlaceId(optionsPlaceId === item.id ? null : item.id)}>
                   <Ionicons name="ellipsis-vertical" size={20} color="#666" />
                 </Pressable>
+                {optionsPlaceId === item.id && (
+                  <View style={styles.optionsMenu}>
+                    <Pressable
+                      style={styles.optionsMenuItem}
+                      onPress={() => { setOptionsPlaceId(null); openEditModal(item); }}
+                    >
+                      <Ionicons name="create-outline" size={16} color="#333" />
+                      <Text style={styles.optionsMenuText}>Editar</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.optionsMenuItem}
+                      onPress={() => handleDeletePlace(item)}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#e53935" />
+                      <Text style={[styles.optionsMenuText, { color: '#e53935' }]}>Excluir</Text>
+                    </Pressable>
+                  </View>
+                )}
               </View>
             </View>
           )}
@@ -323,7 +324,29 @@ const styles = StyleSheet.create({
   cardContent: { flex: 1 },
   cardName: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginBottom: 4 },
   cardDetail: { fontSize: 13, color: '#555', marginBottom: 2 },
-  cardActions: { alignItems: 'center', paddingLeft: 8, paddingTop: 2 },
+  cardActions: { alignItems: 'center', paddingLeft: 8, paddingTop: 2, position: 'relative' },
+  optionsMenu: {
+    position: 'absolute',
+    right: 0,
+    top: 28,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    paddingVertical: 4,
+    minWidth: 120,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    zIndex: 100,
+  },
+  optionsMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  optionsMenuText: { fontSize: 14, color: '#333' },
   empty: { textAlign: 'center', color: '#888', marginTop: 40 },
   fab: {
     position: 'absolute',
