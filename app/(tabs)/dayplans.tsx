@@ -3,24 +3,24 @@ import { useRouter } from 'expo-router';
 import { getAuth, signOut } from 'firebase/auth';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  FlatList,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+    ActivityIndicator,
+    FlatList,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 
 import { firebaseApp } from '@/firebaseInit';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
-import { addUserDayPlan, DayPlan, deleteUserDayPlan, getUserDayPlans, updateUserDayPlan } from '@/services/firestoreService';
+import { addUserDayPlan, DayPlan, deleteUserDayPlan, getUserDayPlans, getUserTrips, Trip, updateUserDayPlan } from '@/services/firestoreService';
 import { BuddyOwner, getBuddyOwners } from '@/services/localDb';
 import { pullFromFirestore } from '@/services/syncService';
 
@@ -58,6 +58,8 @@ export default function DayPlansScreen() {
   const [editNotes, setEditNotes] = useState('');
   const [adminOwners, setAdminOwners] = useState<BuddyOwner[]>([]);
   const [selectedOwnerUid, setSelectedOwnerUid] = useState<string | null>(null);
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
 
   const getUid = () => getAuth(firebaseApp).currentUser?.uid;
 
@@ -89,6 +91,8 @@ export default function DayPlansScreen() {
       setPlans(data);
       const owners = await getBuddyOwners();
       setAdminOwners(owners.filter((o) => o.role === 'admin'));
+      const tripData = await getUserTrips(uid);
+      setTrips(tripData);
     } catch (err) {
       Toast.show({ type: 'error', text1: 'Erro', text2: getFirebaseErrorMessage(err, 'Falha ao sincronizar.') });
     } finally {
@@ -98,7 +102,9 @@ export default function DayPlansScreen() {
 
   useEffect(() => {
     loadPlans();
+    const uid = getUid();
     getBuddyOwners().then((owners) => setAdminOwners(owners.filter((o) => o.role === 'admin')));
+    if (uid) getUserTrips(uid).then(setTrips);
   }, []);
 
   const handleCreate = async () => {
@@ -117,6 +123,7 @@ export default function DayPlansScreen() {
         title: title.trim(),
         date,
         notes: notes.trim(),
+        tripId: selectedTripId,
         createdAt: new Date().toISOString(),
         itemCount: 0,
         totalSpent: 0,
@@ -126,6 +133,7 @@ export default function DayPlansScreen() {
       setDate(new Date().toISOString().slice(0, 10));
       setNotes('');
       setSelectedOwnerUid(null);
+      setSelectedTripId(null);
       setModalVisible(false);
       await loadPlans();
     } catch (err) {
@@ -276,6 +284,32 @@ export default function DayPlansScreen() {
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setModalVisible(false)} />
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Novo role do dia</Text>
+            {trips.length > 0 && (
+              <>
+                <Text style={styles.ownerLabel}>Viagem</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                  <Pressable
+                    style={[styles.ownerChip, !selectedTripId && styles.ownerChipSelected]}
+                    onPress={() => setSelectedTripId(null)}
+                  >
+                    <Text style={[styles.ownerChipText, !selectedTripId && styles.ownerChipTextSelected]}>
+                      Sem viagem
+                    </Text>
+                  </Pressable>
+                  {trips.map((t) => (
+                    <Pressable
+                      key={t.id}
+                      style={[styles.ownerChip, selectedTripId === t.id && styles.ownerChipSelected]}
+                      onPress={() => setSelectedTripId(t.id)}
+                    >
+                      <Text style={[styles.ownerChipText, selectedTripId === t.id && styles.ownerChipTextSelected]}>
+                        {t.description || 'Viagem'}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </>
+            )}
             {adminOwners.length > 0 && (
               <>
                 <Text style={styles.ownerLabel}>Criar para</Text>

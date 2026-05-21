@@ -8,34 +8,47 @@ import {
     deleteLocalDayPlan,
     deleteLocalDayPlanItem,
     deleteLocalPlace,
+    deleteLocalTrip,
+    deleteLocalTripItem,
     genLocalId,
     getDayPlanOwnerUid,
     getLocalBuddies,
     getLocalDayPlanItems,
     getLocalDayPlans,
     getLocalPlaces,
+    getLocalTripItems,
+    getLocalTrips,
     getPlaceOwnerUid,
     getPlanFirestoreId,
     markSynced,
     removeSyncEntryByLocalId,
+    Trip,
+    TripItem,
     updateLocalBuddyFirestoreId,
     updateLocalDayPlanFields,
     updateLocalDayPlanItemFields,
     updateLocalPlaceFields,
     updateLocalPlanTotals,
+    updateLocalTripFields,
+    updateLocalTripItemFields,
     upsertLocalBuddy,
     upsertLocalDayPlan,
     upsertLocalDayPlanItem,
-    upsertLocalPlace
+    upsertLocalPlace,
+    upsertLocalTrip,
+    upsertLocalTripItem,
 } from './localDb';
 
 const firestoreDb = getFirestore(firebaseApp);
 
 export type DayPlanSource = 'user' | 'root';
 
+export type { Trip, TripItem };
+
 export type DayPlan = {
   id: string;
   firestoreId?: string | null;
+  tripId?: string | null;
   title?: string;
   date?: string;
   notes?: string;
@@ -326,6 +339,133 @@ export async function updateBuddyRole(
         role,
         ownerEmail: auth.currentUser?.email ?? '',
       });
+    } catch { /* offline */ }
+  }
+}
+
+// ─────────────────────── TRIPS ───────────────────────
+
+export async function getUserTrips(uid: string): Promise<Trip[]> {
+  return getLocalTrips(uid);
+}
+
+export async function addUserTrip(uid: string, data: Record<string, unknown>): Promise<string> {
+  const localId = genLocalId();
+  await upsertLocalTrip(uid, localId, data as Record<string, any>, false, null);
+  try {
+    const ref = await addDoc(collection(firestoreDb, `users/${uid}/trips`), data);
+    await markSynced('trip', localId, ref.id);
+  } catch { /* will sync later */ }
+  return localId;
+}
+
+export async function updateUserTrip(
+  uid: string,
+  localId: string,
+  data: Record<string, unknown>,
+  firestoreId?: string | null,
+): Promise<void> {
+  await updateLocalTripFields(localId, data as Record<string, any>);
+  const target = firestoreId ?? localId;
+  try {
+    await updateDoc(doc(firestoreDb, `users/${uid}/trips/${target}`), data as any);
+  } catch { /* offline */ }
+}
+
+export async function deleteUserTrip(
+  uid: string,
+  localId: string,
+  firestoreId?: string | null,
+): Promise<void> {
+  await deleteLocalTrip(localId);
+  const target = firestoreId ?? localId;
+  try {
+    await deleteDoc(doc(firestoreDb, `users/${uid}/trips/${target}`));
+  } catch { /* offline */ }
+}
+
+// ─────────────────────── TRIP ITEMS ───────────────────────
+
+export async function getTripItems(uid: string, tripId: string): Promise<TripItem[]> {
+  return getLocalTripItems(uid, tripId);
+}
+
+export async function addTripItem(
+  uid: string,
+  tripId: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  const localId = genLocalId();
+  await upsertLocalTripItem(uid, tripId, localId, data as Record<string, any>, false, null);
+  try {
+    const tripFirestoreId = await (async () => {
+      const { getDb } = await import('./db');
+      const db = await getDb();
+      const row = await db.getFirstAsync<{ firestoreId: string | null }>(
+        'SELECT firestoreId FROM trips WHERE id = ?', [tripId],
+      );
+      return row?.firestoreId ?? null;
+    })();
+    if (tripFirestoreId) {
+      const ref = await addDoc(
+        collection(firestoreDb, `users/${uid}/trips/${tripFirestoreId}/items`),
+        data,
+      );
+      await markSynced('trip_item', localId, ref.id);
+    }
+  } catch { /* offline */ }
+}
+
+export async function updateTripItem(
+  uid: string,
+  tripId: string,
+  localItemId: string,
+  data: Record<string, unknown>,
+  firestoreItemId?: string | null,
+): Promise<void> {
+  await updateLocalTripItemFields(localItemId, data as Record<string, any>);
+  if (firestoreItemId) {
+    try {
+      const tripFirestoreId = await (async () => {
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        const row = await db.getFirstAsync<{ firestoreId: string | null }>(
+          'SELECT firestoreId FROM trips WHERE id = ?', [tripId],
+        );
+        return row?.firestoreId ?? null;
+      })();
+      if (tripFirestoreId) {
+        await updateDoc(
+          doc(firestoreDb, `users/${uid}/trips/${tripFirestoreId}/items/${firestoreItemId}`),
+          data as any,
+        );
+      }
+    } catch { /* offline */ }
+  }
+}
+
+export async function deleteTripItem(
+  uid: string,
+  tripId: string,
+  localItemId: string,
+  firestoreItemId?: string | null,
+): Promise<void> {
+  await deleteLocalTripItem(localItemId);
+  if (firestoreItemId) {
+    try {
+      const tripFirestoreId = await (async () => {
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        const row = await db.getFirstAsync<{ firestoreId: string | null }>(
+          'SELECT firestoreId FROM trips WHERE id = ?', [tripId],
+        );
+        return row?.firestoreId ?? null;
+      })();
+      if (tripFirestoreId) {
+        await deleteDoc(
+          doc(firestoreDb, `users/${uid}/trips/${tripFirestoreId}/items/${firestoreItemId}`),
+        );
+      }
     } catch { /* offline */ }
   }
 }

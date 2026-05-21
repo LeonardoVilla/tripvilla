@@ -11,6 +11,8 @@ import {
     upsertLocalDayPlan,
     upsertLocalDayPlanItem,
     upsertLocalPlace,
+    upsertLocalTrip,
+    upsertLocalTripItem,
 } from './localDb';
 
 const firestoreDb = getFirestore(firebaseApp);
@@ -23,6 +25,22 @@ export async function pullFromFirestore(uid: string): Promise<void> {
   if (_pulling) return;
   _pulling = true;
   try {
+    // Own trips + their items
+    try {
+      const tripsSnap = await getDocs(collection(firestoreDb, `users/${uid}/trips`));
+      for (const tripDoc of tripsSnap.docs) {
+        await upsertLocalTrip(uid, tripDoc.id, tripDoc.data() as Record<string, any>, true, tripDoc.id);
+        try {
+          const itemsSnap = await getDocs(
+            collection(firestoreDb, `users/${uid}/trips/${tripDoc.id}/items`),
+          );
+          for (const itemDoc of itemsSnap.docs) {
+            await upsertLocalTripItem(uid, tripDoc.id, itemDoc.id, itemDoc.data() as Record<string, any>, true, itemDoc.id);
+          }
+        } catch { /* ignore */ }
+      }
+    } catch { /* offline */ }
+
     // Own places
     try {
       const snap = await getDocs(collection(firestoreDb, `users/${uid}/places`));

@@ -16,6 +16,7 @@ export async function getLocalPlaces(uid: string) {
     id: r.id as string,
     firestoreId: r.firestoreId as string | null | undefined,
     ownerUid: r.ownerUid as string | null | undefined,
+    tripId: r.tripId as string | null | undefined,
     name: r.name as string | undefined,
     location: r.location as string | undefined,
     openingTime: r.openTime as string | undefined,
@@ -47,7 +48,7 @@ export async function upsertLocalPlace(
       // Já existe registro local vinculado a esse doc do Firestore — apenas atualiza
       await db.runAsync(
         `UPDATE places SET synced = 1, firestoreId = ?, uid = ?, ownerUid = ? WHERE id = ?`,
-        [firestoreId, uid, data.ownerUid ?? null, existing.id],
+        [firestoreId, uid, data.ownerUid ?? null, existing.id], // tripId not updated on Firestore sync
       );
       return;
     }
@@ -55,8 +56,8 @@ export async function upsertLocalPlace(
 
   await db.runAsync(
     `INSERT OR REPLACE INTO places
-     (id, uid, name, location, openTime, closeTime, travelTime, transport, createdAt, synced, firestoreId, ownerUid)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, uid, name, location, openTime, closeTime, travelTime, transport, createdAt, synced, firestoreId, ownerUid, tripId)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, uid,
       data.name ?? null, data.location ?? null,
@@ -67,6 +68,7 @@ export async function upsertLocalPlace(
       data.createdAt ?? new Date().toISOString(),
       synced ? 1 : 0, firestoreId,
       data.ownerUid ?? null,
+      data.tripId ?? null,
     ],
   );
 }
@@ -87,13 +89,14 @@ export async function deleteLocalPlace(id: string) {
 export async function updateLocalPlaceFields(id: string, data: Record<string, any>) {
   const db = await getDb();
   await db.runAsync(
-    `UPDATE places SET name=?, location=?, openTime=?, closeTime=?, travelTime=?, transport=? WHERE id=?`,
+    `UPDATE places SET name=?, location=?, openTime=?, closeTime=?, travelTime=?, transport=?, tripId=? WHERE id=?`,
     [
       data.name ?? null, data.location ?? null,
       data.openingTime ?? data.openTime ?? null,
       data.closingTime ?? data.closeTime ?? null,
       data.commuteDuration ?? data.travelTime ?? null,
       data.transportSchedule ?? data.transport ?? null,
+      data.tripId ?? null,
       id,
     ],
   );
@@ -119,6 +122,7 @@ export async function getLocalDayPlans(uid: string) {
     id: r.id as string,
     firestoreId: r.firestoreId as string | null | undefined,
     ownerUid: r.ownerUid as string | null | undefined,
+    tripId: r.tripId as string | null | undefined,
     title: r.title as string | undefined,
     date: r.date as string | undefined,
     notes: r.notes as string | undefined,
@@ -155,8 +159,8 @@ export async function upsertLocalDayPlan(
 
   await db.runAsync(
     `INSERT OR REPLACE INTO day_plans
-     (id, uid, title, date, notes, itemCount, totalSpent, createdAt, synced, firestoreId, source, ownerUid)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, uid, title, date, notes, itemCount, totalSpent, createdAt, synced, firestoreId, source, ownerUid, tripId)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, uid,
       data.title ?? null, data.date ?? null, data.notes ?? null,
@@ -164,6 +168,7 @@ export async function upsertLocalDayPlan(
       data.createdAt ?? new Date().toISOString(),
       synced ? 1 : 0, firestoreId, data._source ?? 'user',
       data.ownerUid ?? null,
+      data.tripId ?? null,
     ],
   );
 }
@@ -279,8 +284,8 @@ export async function deleteLocalDayPlan(id: string) {
 export async function updateLocalDayPlanFields(id: string, data: Record<string, any>) {
   const db = await getDb();
   await db.runAsync(
-    'UPDATE day_plans SET title=?, date=?, notes=? WHERE id=?',
-    [data.title ?? null, data.date ?? null, data.notes ?? null, id],
+    'UPDATE day_plans SET title=?, date=?, notes=?, tripId=? WHERE id=?',
+    [data.title ?? null, data.date ?? null, data.notes ?? null, data.tripId ?? null, id],
   );
 }
 
@@ -319,6 +324,8 @@ const TABLE_MAP = {
   place: 'places',
   day_plan: 'day_plans',
   day_plan_item: 'day_plan_items',
+  trip: 'trips',
+  trip_item: 'trip_items',
 } as const;
 
 export async function markSynced(
@@ -474,4 +481,200 @@ export async function getBuddyOwners(): Promise<BuddyOwner[]> {
 export async function clearBuddyOwners(): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM buddy_owners');
+}
+
+// ─────────────────────── TRIPS ───────────────────────
+
+export type Trip = {
+  id: string;
+  firestoreId?: string | null;
+  uid: string;
+  description?: string;
+  country?: string;
+  state?: string;
+  city?: string;
+  maxCost: number;
+  createdAt?: string;
+  _synced: boolean;
+};
+
+export async function getLocalTrips(uid: string): Promise<Trip[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<Record<string, any>>(
+    'SELECT * FROM trips WHERE uid = ? ORDER BY createdAt DESC',
+    [uid],
+  );
+  return rows.map((r) => ({
+    id: r.id as string,
+    firestoreId: r.firestoreId as string | null | undefined,
+    uid: r.uid as string,
+    description: r.description as string | undefined,
+    country: r.country as string | undefined,
+    state: r.state as string | undefined,
+    city: r.city as string | undefined,
+    maxCost: (r.maxCost as number) ?? 0,
+    createdAt: r.createdAt as string | undefined,
+    _synced: Boolean(r.synced),
+  }));
+}
+
+export async function upsertLocalTrip(
+  uid: string,
+  id: string,
+  data: Record<string, any>,
+  synced: boolean,
+  firestoreId: string | null,
+): Promise<void> {
+  const db = await getDb();
+
+  if (firestoreId && id === firestoreId) {
+    const existing = await db.getFirstAsync<{ id: string }>(
+      'SELECT id FROM trips WHERE firestoreId = ?',
+      [firestoreId],
+    );
+    if (existing) {
+      await db.runAsync(
+        `UPDATE trips SET synced = 1, firestoreId = ? WHERE id = ?`,
+        [firestoreId, existing.id],
+      );
+      return;
+    }
+  }
+
+  await db.runAsync(
+    `INSERT OR REPLACE INTO trips
+     (id, uid, description, country, state, city, maxCost, createdAt, synced, firestoreId)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id, uid,
+      data.description ?? null,
+      data.country ?? null,
+      data.state ?? null,
+      data.city ?? null,
+      data.maxCost ?? 0,
+      data.createdAt ?? new Date().toISOString(),
+      synced ? 1 : 0,
+      firestoreId,
+    ],
+  );
+}
+
+export async function deleteLocalTrip(id: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM trips WHERE id = ?', [id]);
+  await db.runAsync('DELETE FROM trip_items WHERE tripId = ?', [id]);
+}
+
+export async function updateLocalTripFields(id: string, data: Record<string, any>): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'UPDATE trips SET description=?, country=?, state=?, city=?, maxCost=? WHERE id=?',
+    [data.description ?? null, data.country ?? null, data.state ?? null, data.city ?? null, data.maxCost ?? 0, id],
+  );
+}
+
+// ─────────────────────── TRIP ITEMS ───────────────────────
+
+export type TripItem = {
+  id: string;
+  firestoreId?: string | null;
+  tripId: string;
+  uid: string;
+  type?: string;
+  description?: string;
+  amount: number;
+  createdAt?: string;
+  _synced: boolean;
+};
+
+export async function getLocalTripItems(uid: string, tripId: string): Promise<TripItem[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<Record<string, any>>(
+    'SELECT * FROM trip_items WHERE uid = ? AND tripId = ? ORDER BY createdAt ASC',
+    [uid, tripId],
+  );
+  return rows.map((r) => ({
+    id: r.id as string,
+    firestoreId: r.firestoreId as string | null | undefined,
+    tripId: r.tripId as string,
+    uid: r.uid as string,
+    type: r.type as string | undefined,
+    description: r.description as string | undefined,
+    amount: (r.amount as number) ?? 0,
+    createdAt: r.createdAt as string | undefined,
+    _synced: Boolean(r.synced),
+  }));
+}
+
+export async function upsertLocalTripItem(
+  uid: string,
+  tripId: string,
+  id: string,
+  data: Record<string, any>,
+  synced: boolean,
+  firestoreId: string | null,
+): Promise<void> {
+  const db = await getDb();
+
+  if (firestoreId && id === firestoreId) {
+    const existing = await db.getFirstAsync<{ id: string }>(
+      'SELECT id FROM trip_items WHERE firestoreId = ?',
+      [firestoreId],
+    );
+    if (existing) {
+      await db.runAsync(
+        `UPDATE trip_items SET synced = 1, firestoreId = ? WHERE id = ?`,
+        [firestoreId, existing.id],
+      );
+      return;
+    }
+  }
+
+  await db.runAsync(
+    `INSERT OR REPLACE INTO trip_items
+     (id, uid, tripId, type, description, amount, createdAt, synced, firestoreId)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id, uid, tripId,
+      data.type ?? null,
+      data.description ?? null,
+      data.amount ?? 0,
+      data.createdAt ?? new Date().toISOString(),
+      synced ? 1 : 0,
+      firestoreId,
+    ],
+  );
+}
+
+export async function deleteLocalTripItem(id: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM trip_items WHERE id = ?', [id]);
+}
+
+export async function updateLocalTripItemFields(id: string, data: Record<string, any>): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'UPDATE trip_items SET type=?, description=?, amount=? WHERE id=?',
+    [data.type ?? null, data.description ?? null, data.amount ?? 0, id],
+  );
+}
+
+/** Sum of all trip_items.amount for a given tripId. */
+export async function getTripFixedTotal(tripId: string): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ total: number | null }>(
+    'SELECT SUM(amount) as total FROM trip_items WHERE tripId = ?',
+    [tripId],
+  );
+  return row?.total ?? 0;
+}
+
+/** Sum of totalSpent of all day_plans belonging to a tripId. */
+export async function getTripVariableTotal(tripId: string): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ total: number | null }>(
+    'SELECT SUM(totalSpent) as total FROM day_plans WHERE tripId = ?',
+    [tripId],
+  );
+  return row?.total ?? 0;
 }

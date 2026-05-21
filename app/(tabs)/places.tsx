@@ -4,24 +4,24 @@ import { useRouter } from 'expo-router';
 import { getAuth, signOut } from 'firebase/auth';
 import React, { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
-  FlatList,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+    ActivityIndicator,
+    FlatList,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 
 import { firebaseApp } from '@/firebaseInit';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
-import { addUserPlace, deleteUserPlace, getUserPlaces, updateUserPlace } from '@/services/firestoreService';
+import { addUserPlace, deleteUserPlace, getUserPlaces, getUserTrips, Trip, updateUserPlace } from '@/services/firestoreService';
 import { BuddyOwner, getBuddyOwners } from '@/services/localDb';
 import { pullFromFirestore } from '@/services/syncService';
 
@@ -56,6 +56,8 @@ export default function PlacesScreen() {
   const [transportSchedule, setTransportSchedule] = useState('');
   const [adminOwners, setAdminOwners] = useState<BuddyOwner[]>([]);
   const [selectedOwnerUid, setSelectedOwnerUid] = useState<string | null>(null);
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
 
   const getUid = () => getAuth(firebaseApp).currentUser?.uid;
 
@@ -83,6 +85,8 @@ export default function PlacesScreen() {
       setPlaces(data);
       const owners = await getBuddyOwners();
       setAdminOwners(owners.filter((o) => o.role === 'admin'));
+      const tripData = await getUserTrips(uid);
+      setTrips(tripData);
     } catch (err) {
       Toast.show({
         type: 'error',
@@ -105,6 +109,7 @@ export default function PlacesScreen() {
     setCommuteDuration('30 min');
     setTransportSchedule('');
     setSelectedOwnerUid(null);
+    setSelectedTripId(null);
   };
 
   const openEditModal = (place: Place) => {
@@ -154,6 +159,7 @@ export default function PlacesScreen() {
         closingTime,
         commuteDuration,
         transportSchedule: transportSchedule.trim(),
+        tripId: selectedTripId,
         updatedAt: new Date().toISOString(),
       };
       if (editingPlace) {
@@ -280,6 +286,32 @@ export default function PlacesScreen() {
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setModalVisible(false)} />
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{editingPlace ? 'Editar local' : 'Novo local'}</Text>
+            {trips.length > 0 && (
+              <>
+                <Text style={styles.label}>Viagem</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                  <Pressable
+                    style={[styles.ownerChip, !selectedTripId && styles.ownerChipSelected]}
+                    onPress={() => setSelectedTripId(null)}
+                  >
+                    <Text style={[styles.ownerChipText, !selectedTripId && styles.ownerChipTextSelected]}>
+                      Sem viagem
+                    </Text>
+                  </Pressable>
+                  {trips.map((t) => (
+                    <Pressable
+                      key={t.id}
+                      style={[styles.ownerChip, selectedTripId === t.id && styles.ownerChipSelected]}
+                      onPress={() => setSelectedTripId(t.id)}
+                    >
+                      <Text style={[styles.ownerChipText, selectedTripId === t.id && styles.ownerChipTextSelected]}>
+                        {t.description || 'Viagem'}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </>
+            )}
             {!editingPlace && adminOwners.length > 0 && (
               <>
                 <Text style={styles.label}>Adicionar para</Text>
