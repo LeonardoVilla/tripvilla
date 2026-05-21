@@ -163,7 +163,7 @@ export default function TripsScreen() {
       onPress={() =>
         router.push({
           pathname: '/trip/[id]',
-          params: { id: item.id, title: item.description ?? 'Viagem' },
+          params: { id: item.id, title: item.description ?? 'Viagem', maxCost: String(item.maxCost ?? 0) },
         })
       }
       onLongPress={() => setOptionsTripId(item.id)}
