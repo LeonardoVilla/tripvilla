@@ -1,4 +1,5 @@
 import { firebaseApp } from '@/firebaseInit';
+import { getAuth } from 'firebase/auth';
 import { addDoc, collection, getDocs, getFirestore } from 'firebase/firestore';
 import {
     getPlanFirestoreId,
@@ -20,7 +21,7 @@ export async function pullFromFirestore(uid: string): Promise<void> {
   if (_pulling) return;
   _pulling = true;
   try {
-    // Places
+    // Own places
     try {
       const snap = await getDocs(collection(firestoreDb, `users/${uid}/places`));
       for (const d of snap.docs) {
@@ -30,7 +31,7 @@ export async function pullFromFirestore(uid: string): Promise<void> {
       // Permission denied or offline — ignore
     }
 
-    // Day plans + their items
+    // Own day plans + their items
     try {
       const plansSnap = await getDocs(collection(firestoreDb, `users/${uid}/day_plans`));
       for (const planDoc of plansSnap.docs) {
@@ -53,6 +54,54 @@ export async function pullFromFirestore(uid: string): Promise<void> {
         } catch { /* ignore item fetch errors */ }
       }
     } catch { /* ignore */ }
+
+    // Buddy owners' data — look up all owners who added the current user as a buddy
+    const myEmail = getAuth(firebaseApp).currentUser?.email;
+    if (myEmail) {
+      try {
+        const ownersSnap = await getDocs(
+          collection(firestoreDb, `buddyIndex/${myEmail}/owners`),
+        );
+        for (const ownerDoc of ownersSnap.docs) {
+          const ownerUid = ownerDoc.id;
+          // Pull owner's places
+          try {
+            const placesSnap = await getDocs(collection(firestoreDb, `users/${ownerUid}/places`));
+            for (const d of placesSnap.docs) {
+              await upsertLocalPlace(
+                uid, d.id,
+                { ...d.data() as Record<string, any>, ownerUid },
+                true, d.id,
+              );
+            }
+          } catch { /* no access or offline */ }
+
+          // Pull owner's day plans + items
+          try {
+            const plansSnap = await getDocs(collection(firestoreDb, `users/${ownerUid}/day_plans`));
+            for (const planDoc of plansSnap.docs) {
+              await upsertLocalDayPlan(
+                uid, planDoc.id,
+                { ...planDoc.data(), _source: 'root', ownerUid } as Record<string, any>,
+                true, planDoc.id,
+              );
+              try {
+                const itemsSnap = await getDocs(
+                  collection(firestoreDb, `users/${ownerUid}/day_plans/${planDoc.id}/items`),
+                );
+                for (const itemDoc of itemsSnap.docs) {
+                  await upsertLocalDayPlanItem(
+                    uid, planDoc.id, itemDoc.id,
+                    { ...itemDoc.data(), _source: 'root', ownerUid } as Record<string, any>,
+                    true, itemDoc.id,
+                  );
+                }
+              } catch { /* ignore */ }
+            }
+          } catch { /* no access or offline */ }
+        }
+      } catch { /* buddyIndex not accessible or offline */ }
+    }
   } finally {
     _pulling = false;
   }

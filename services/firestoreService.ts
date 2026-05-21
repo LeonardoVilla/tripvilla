@@ -1,5 +1,5 @@
 ﻿import { firebaseApp } from '@/firebaseInit';
-import { addDoc, collection, deleteDoc, doc, getDocs, getFirestore, increment, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, getFirestore, increment, setDoc, updateDoc } from 'firebase/firestore';
 import {
     addToSyncQueue,
     Buddy,
@@ -9,10 +9,12 @@ import {
     deleteLocalDayPlanItem,
     deleteLocalPlace,
     genLocalId,
+    getDayPlanOwnerUid,
     getLocalBuddies,
     getLocalDayPlanItems,
     getLocalDayPlans,
     getLocalPlaces,
+    getPlaceOwnerUid,
     getPlanFirestoreId,
     markSynced,
     removeSyncEntryByLocalId,
@@ -84,9 +86,10 @@ export async function updateUserPlace(
   firestoreId?: string | null,
 ) {
   await updateLocalPlaceFields(placeId, data as Record<string, any>);
+  const firestoreOwner = (await getPlaceOwnerUid(placeId)) ?? uid;
   const target = firestoreId ?? placeId;
   try {
-    await updateDoc(doc(firestoreDb, `users/${uid}/places/${target}`), data as any);
+    await updateDoc(doc(firestoreDb, `users/${firestoreOwner}/places/${target}`), data as any);
   } catch { /* offline — TODO: queue update */ }
 }
 
@@ -97,8 +100,9 @@ export async function deleteUserPlace(
 ) {
   await deleteLocalPlace(placeId);
   if (firestoreId) {
+    const firestoreOwner = (await getPlaceOwnerUid(placeId)) ?? uid;
     try {
-      await deleteDoc(doc(firestoreDb, `users/${uid}/places/${firestoreId}`));
+      await deleteDoc(doc(firestoreDb, `users/${firestoreOwner}/places/${firestoreId}`));
     } catch { /* offline — TODO: queue delete */ }
   }
 }
@@ -133,11 +137,12 @@ export async function getDayPlanItems(
 }
 
 export async function deleteUserDayPlan(uid: string, localId: string, firestoreId?: string | null) {
+  const firestoreOwner = (await getDayPlanOwnerUid(localId)) ?? uid;
   await deleteLocalDayPlan(localId);
   await addToSyncQueue('delete', 'day_plan', localId, {});
   if (firestoreId) {
     try {
-      await deleteDoc(doc(firestoreDb, `users/${uid}/day_plans/${firestoreId}`));
+      await deleteDoc(doc(firestoreDb, `users/${firestoreOwner}/day_plans/${firestoreId}`));
     } catch { /* will sync later */ }
   }
 }
@@ -148,11 +153,12 @@ export async function updateUserDayPlan(
   data: { title?: string; date?: string; notes?: string },
   firestoreId?: string | null,
 ) {
+  const firestoreOwner = (await getDayPlanOwnerUid(localId)) ?? uid;
   await updateLocalDayPlanFields(localId, data);
   await addToSyncQueue('update', 'day_plan', localId, data);
   if (firestoreId) {
     try {
-      await updateDoc(doc(firestoreDb, `users/${uid}/day_plans/${firestoreId}`), data);
+      await updateDoc(doc(firestoreDb, `users/${firestoreOwner}/day_plans/${firestoreId}`), data);
     } catch { /* will sync later */ }
   }
 }
@@ -163,6 +169,7 @@ export async function deleteDayPlanItem(
   itemLocalId: string,
   itemFirestoreId?: string | null,
 ) {
+  const firestoreOwner = (await getDayPlanOwnerUid(dayPlanLocalId)) ?? uid;
   await deleteLocalDayPlanItem(itemLocalId);
   await updateLocalPlanTotals(dayPlanLocalId);
   await addToSyncQueue('delete', 'day_plan_item', itemLocalId, {});
@@ -171,7 +178,7 @@ export async function deleteDayPlanItem(
       const planFirestoreId = await getPlanFirestoreId(dayPlanLocalId);
       if (planFirestoreId) {
         await deleteDoc(
-          doc(firestoreDb, `users/${uid}/day_plans/${planFirestoreId}/items/${itemFirestoreId}`),
+          doc(firestoreDb, `users/${firestoreOwner}/day_plans/${planFirestoreId}/items/${itemFirestoreId}`),
         );
       }
     } catch { /* will sync later */ }
@@ -185,6 +192,7 @@ export async function updateDayPlanItem(
   data: { arrivalTime?: string; leaveTime?: string; amountSpent?: number; notes?: string },
   itemFirestoreId?: string | null,
 ) {
+  const firestoreOwner = (await getDayPlanOwnerUid(dayPlanLocalId)) ?? uid;
   await updateLocalDayPlanItemFields(itemLocalId, data);
   await updateLocalPlanTotals(dayPlanLocalId);
   await addToSyncQueue('update', 'day_plan_item', itemLocalId, data);
@@ -193,7 +201,7 @@ export async function updateDayPlanItem(
       const planFirestoreId = await getPlanFirestoreId(dayPlanLocalId);
       if (planFirestoreId) {
         await updateDoc(
-          doc(firestoreDb, `users/${uid}/day_plans/${planFirestoreId}/items/${itemFirestoreId}`),
+          doc(firestoreDb, `users/${firestoreOwner}/day_plans/${planFirestoreId}/items/${itemFirestoreId}`),
           data,
         );
       }
@@ -207,6 +215,7 @@ export async function addDayPlanItem(
   data: Record<string, unknown>,
   _source: DayPlanSource,
 ) {
+  const firestoreOwner = (await getDayPlanOwnerUid(dayPlanId)) ?? uid;
   const localId = genLocalId();
   await upsertLocalDayPlanItem(uid, dayPlanId, localId, data as Record<string, any>, false, null);
   await updateLocalPlanTotals(dayPlanId);
@@ -220,7 +229,7 @@ export async function addDayPlanItem(
     const planFirestoreId = await getPlanFirestoreId(dayPlanId);
     if (planFirestoreId) {
       const ref = await addDoc(
-        collection(firestoreDb, `users/${uid}/day_plans/${planFirestoreId}/items`),
+        collection(firestoreDb, `users/${firestoreOwner}/day_plans/${planFirestoreId}/items`),
         data,
       );
       await markSynced('day_plan_item', localId, ref.id);
@@ -228,7 +237,7 @@ export async function addDayPlanItem(
       // Update Firestore plan totals
       const amount = typeof data.amountSpent === 'number' ? data.amountSpent : 0;
       try {
-        await updateDoc(doc(firestoreDb, `users/${uid}/day_plans/${planFirestoreId}`), {
+        await updateDoc(doc(firestoreDb, `users/${firestoreOwner}/day_plans/${planFirestoreId}`), {
           itemCount: increment(1),
           totalSpent: increment(amount),
         });
@@ -266,6 +275,8 @@ export async function addBuddy(
       addedAt: new Date().toISOString(),
     });
     await updateLocalBuddyFirestoreId(localId, ref.id);
+    // Index so the buddy can discover this owner when they sync
+    await setDoc(doc(firestoreDb, `buddyIndex/${email}/owners/${ownerUid}`), { role });
   } catch { /* will sync later */ }
 }
 
@@ -273,12 +284,18 @@ export async function removeBuddy(
   ownerUid: string,
   buddyId: string,
   firestoreId?: string | null,
+  buddyEmail?: string,
 ): Promise<void> {
   await deleteLocalBuddy(buddyId);
   const target = firestoreId ?? buddyId;
   try {
     await deleteDoc(doc(firestoreDb, `users/${ownerUid}/buddies/${target}`));
   } catch { /* offline */ }
+  if (buddyEmail) {
+    try {
+      await deleteDoc(doc(firestoreDb, `buddyIndex/${buddyEmail}/owners/${ownerUid}`));
+    } catch { /* offline */ }
+  }
 }
 
 export async function updateBuddyRole(
@@ -286,6 +303,7 @@ export async function updateBuddyRole(
   buddyId: string,
   role: BuddyRole,
   firestoreId?: string | null,
+  buddyEmail?: string,
 ): Promise<void> {
   const db = await import('./db').then((m) => m.getDb());
   await db.runAsync('UPDATE buddies SET role = ? WHERE id = ?', [role, buddyId]);
@@ -293,4 +311,9 @@ export async function updateBuddyRole(
   try {
     await updateDoc(doc(firestoreDb, `users/${ownerUid}/buddies/${target}`), { role });
   } catch { /* offline */ }
+  if (buddyEmail) {
+    try {
+      await setDoc(doc(firestoreDb, `buddyIndex/${buddyEmail}/owners/${ownerUid}`), { role });
+    } catch { /* offline */ }
+  }
 }
