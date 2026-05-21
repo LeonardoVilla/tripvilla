@@ -3,30 +3,30 @@ import { useRouter } from 'expo-router';
 import { getAuth, signOut } from 'firebase/auth';
 import React, { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
-  FlatList,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+    ActivityIndicator,
+    FlatList,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    Pressable,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 
-import { useFocusRefresh } from '@/hooks/use-focus-refresh';
 import { firebaseApp } from '@/firebaseInit';
+import { useFocusRefresh } from '@/hooks/use-focus-refresh';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import {
-  addBuddy,
-  Buddy,
-  BuddyRole,
-  getBuddies,
-  removeBuddy,
-  updateBuddyRole,
+    addBuddy,
+    Buddy,
+    BuddyRole,
+    getBuddies,
+    removeBuddy,
+    updateBuddyRole,
 } from '@/services/firestoreService';
 
 const TEAL = '#1f7a6f';
