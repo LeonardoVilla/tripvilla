@@ -110,6 +110,11 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
           );
       `);
 
+      // Migration: add ownerUid column for buddy data sharing (safe to run on existing DBs)
+      await db.execAsync(`ALTER TABLE places ADD COLUMN ownerUid TEXT`).catch(() => {});
+      await db.execAsync(`ALTER TABLE day_plans ADD COLUMN ownerUid TEXT`).catch(() => {});
+      await db.execAsync(`ALTER TABLE day_plan_items ADD COLUMN ownerUid TEXT`).catch(() => {});
+
       // Remove sync queue entries for records already synced (firestoreId set)
       // These were left behind by the bug where immediate sync succeeded but didn't remove the queue entry.
       await db.execAsync(`

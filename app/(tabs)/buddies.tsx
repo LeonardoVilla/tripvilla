@@ -3,16 +3,16 @@ import { useRouter } from 'expo-router';
 import { getAuth, signOut } from 'firebase/auth';
 import React, { useCallback, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -21,12 +21,12 @@ import { firebaseApp } from '@/firebaseInit';
 import { useFocusRefresh } from '@/hooks/use-focus-refresh';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import {
-    addBuddy,
-    Buddy,
-    BuddyRole,
-    getBuddies,
-    removeBuddy,
-    updateBuddyRole,
+  addBuddy,
+  Buddy,
+  BuddyRole,
+  getBuddies,
+  removeBuddy,
+  updateBuddyRole,
 } from '@/services/firestoreService';
 
 const TEAL = '#1f7a6f';
@@ -135,7 +135,7 @@ export default function BuddiesScreen() {
     const uid = getUid();
     if (!uid) return;
     try {
-      await updateBuddyRole(uid, buddy.id, newRole, buddy.firestoreId);
+      await updateBuddyRole(uid, buddy.id, newRole, buddy.firestoreId, buddy.email);
       setBuddies((prev) => prev.map((b) => (b.id === buddy.id ? { ...b, role: newRole } : b)));
       setOptionsBuddyId(null);
       Toast.show({ type: 'success', text1: 'Permissão atualizada!' });
@@ -149,7 +149,7 @@ export default function BuddiesScreen() {
     if (!uid) return;
     try {
       setOptionsBuddyId(null);
-      await removeBuddy(uid, buddy.id, buddy.firestoreId);
+      await removeBuddy(uid, buddy.id, buddy.firestoreId, buddy.email);
       setBuddies((prev) => prev.filter((b) => b.id !== buddy.id));
       Toast.show({ type: 'success', text1: 'Buddy removido.' });
     } catch (err) {

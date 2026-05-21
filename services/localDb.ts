@@ -15,6 +15,7 @@ export async function getLocalPlaces(uid: string) {
   return rows.map((r) => ({
     id: r.id as string,
     firestoreId: r.firestoreId as string | null | undefined,
+    ownerUid: r.ownerUid as string | null | undefined,
     name: r.name as string | undefined,
     location: r.location as string | undefined,
     openingTime: r.openTime as string | undefined,
@@ -45,8 +46,8 @@ export async function upsertLocalPlace(
     if (existing) {
       // Já existe registro local vinculado a esse doc do Firestore — apenas atualiza
       await db.runAsync(
-        `UPDATE places SET synced = 1, firestoreId = ? WHERE id = ?`,
-        [firestoreId, existing.id],
+        `UPDATE places SET synced = 1, firestoreId = ?, uid = ?, ownerUid = ? WHERE id = ?`,
+        [firestoreId, uid, data.ownerUid ?? null, existing.id],
       );
       return;
     }
@@ -54,8 +55,8 @@ export async function upsertLocalPlace(
 
   await db.runAsync(
     `INSERT OR REPLACE INTO places
-     (id, uid, name, location, openTime, closeTime, travelTime, transport, createdAt, synced, firestoreId)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, uid, name, location, openTime, closeTime, travelTime, transport, createdAt, synced, firestoreId, ownerUid)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, uid,
       data.name ?? null, data.location ?? null,
@@ -65,8 +66,17 @@ export async function upsertLocalPlace(
       data.transportSchedule ?? data.transport ?? null,
       data.createdAt ?? new Date().toISOString(),
       synced ? 1 : 0, firestoreId,
+      data.ownerUid ?? null,
     ],
   );
+}
+
+export async function getPlaceOwnerUid(id: string): Promise<string | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ ownerUid: string | null }>(
+    'SELECT ownerUid FROM places WHERE id = ?', [id],
+  );
+  return row?.ownerUid ?? null;
 }
 
 export async function deleteLocalPlace(id: string) {
@@ -108,6 +118,7 @@ export async function getLocalDayPlans(uid: string) {
   return rows.map((r) => ({
     id: r.id as string,
     firestoreId: r.firestoreId as string | null | undefined,
+    ownerUid: r.ownerUid as string | null | undefined,
     title: r.title as string | undefined,
     date: r.date as string | undefined,
     notes: r.notes as string | undefined,
@@ -144,16 +155,25 @@ export async function upsertLocalDayPlan(
 
   await db.runAsync(
     `INSERT OR REPLACE INTO day_plans
-     (id, uid, title, date, notes, itemCount, totalSpent, createdAt, synced, firestoreId, source)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, uid, title, date, notes, itemCount, totalSpent, createdAt, synced, firestoreId, source, ownerUid)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, uid,
       data.title ?? null, data.date ?? null, data.notes ?? null,
       data.itemCount ?? 0, data.totalSpent ?? 0,
       data.createdAt ?? new Date().toISOString(),
       synced ? 1 : 0, firestoreId, data._source ?? 'user',
+      data.ownerUid ?? null,
     ],
   );
+}
+
+export async function getDayPlanOwnerUid(id: string): Promise<string | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ ownerUid: string | null }>(
+    'SELECT ownerUid FROM day_plans WHERE id = ?', [id],
+  );
+  return row?.ownerUid ?? null;
 }
 
 export async function updateLocalPlanTotals(planId: string) {
@@ -195,6 +215,7 @@ export async function getLocalDayPlanItems(uid: string, dayPlanId: string) {
   return rows.map((r) => ({
     id: r.id as string,
     firestoreId: r.firestoreId as string | null | undefined,
+    ownerUid: r.ownerUid as string | null | undefined,
     dayPlanId: r.dayPlanId as string | undefined,
     placeId: r.placeId as string | undefined,
     placeName: r.placeName as string | undefined,
@@ -236,8 +257,8 @@ export async function upsertLocalDayPlanItem(
   await db.runAsync(
     `INSERT OR REPLACE INTO day_plan_items
      (id, uid, dayPlanId, placeId, placeName, placeLocation, arrivalTime, leaveTime,
-      amountSpent, notes, addedAt, synced, firestoreId, source)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      amountSpent, notes, addedAt, synced, firestoreId, source, ownerUid)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, uid, dayPlanId,
       data.placeId ?? null, data.placeName ?? null, data.placeLocation ?? null,
@@ -245,6 +266,7 @@ export async function upsertLocalDayPlanItem(
       data.amountSpent ?? 0, data.notes ?? null,
       data.addedAt ?? new Date().toISOString(),
       synced ? 1 : 0, firestoreId, data._source ?? 'user',
+      data.ownerUid ?? null,
     ],
   );
 }
