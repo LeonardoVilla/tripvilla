@@ -10,6 +10,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -21,6 +22,7 @@ import Toast from 'react-native-toast-message';
 import { firebaseApp } from '@/firebaseInit';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import { addUserPlace, deleteUserPlace, getUserPlaces, updateUserPlace } from '@/services/firestoreService';
+import { BuddyOwner, getBuddyOwners } from '@/services/localDb';
 import { pullFromFirestore } from '@/services/syncService';
 
 const TEAL = '#1f7a6f';
@@ -52,6 +54,8 @@ export default function PlacesScreen() {
   const [closingTime, setClosingTime] = useState('18:00');
   const [commuteDuration, setCommuteDuration] = useState('30 min');
   const [transportSchedule, setTransportSchedule] = useState('');
+  const [adminOwners, setAdminOwners] = useState<BuddyOwner[]>([]);
+  const [selectedOwnerUid, setSelectedOwnerUid] = useState<string | null>(null);
 
   const getUid = () => getAuth(firebaseApp).currentUser?.uid;
 
@@ -77,6 +81,8 @@ export default function PlacesScreen() {
       await pullFromFirestore(uid);
       const data = (await getUserPlaces(uid)) as Place[];
       setPlaces(data);
+      const owners = await getBuddyOwners();
+      setAdminOwners(owners.filter((o) => o.role === 'admin'));
     } catch (err) {
       Toast.show({
         type: 'error',
@@ -98,6 +104,7 @@ export default function PlacesScreen() {
     setClosingTime('18:00');
     setCommuteDuration('30 min');
     setTransportSchedule('');
+    setSelectedOwnerUid(null);
   };
 
   const openEditModal = (place: Place) => {
@@ -153,7 +160,7 @@ export default function PlacesScreen() {
         await updateUserPlace(uid, editingPlace.id, payload, editingPlace.firestoreId);
         Toast.show({ type: 'success', text1: 'Local atualizado!' });
       } else {
-        await addUserPlace(uid, { ...payload, visited: false });
+        await addUserPlace(uid, { ...payload, visited: false }, selectedOwnerUid ?? undefined);
         Toast.show({ type: 'success', text1: 'Local salvo!' });
       }
       resetForm();
@@ -273,6 +280,32 @@ export default function PlacesScreen() {
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setModalVisible(false)} />
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{editingPlace ? 'Editar local' : 'Novo local'}</Text>
+            {!editingPlace && adminOwners.length > 0 && (
+              <>
+                <Text style={styles.label}>Adicionar para</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                  <Pressable
+                    style={[styles.ownerChip, !selectedOwnerUid && styles.ownerChipSelected]}
+                    onPress={() => setSelectedOwnerUid(null)}
+                  >
+                    <Text style={[styles.ownerChipText, !selectedOwnerUid && styles.ownerChipTextSelected]}>
+                      Minha conta
+                    </Text>
+                  </Pressable>
+                  {adminOwners.map((o) => (
+                    <Pressable
+                      key={o.ownerUid}
+                      style={[styles.ownerChip, selectedOwnerUid === o.ownerUid && styles.ownerChipSelected]}
+                      onPress={() => setSelectedOwnerUid(o.ownerUid)}
+                    >
+                      <Text style={[styles.ownerChipText, selectedOwnerUid === o.ownerUid && styles.ownerChipTextSelected]}>
+                        {o.ownerEmail || 'Parceiro'}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </>
+            )}
             <TextInput
               style={styles.input}
               placeholder="Nome do local"
@@ -441,4 +474,16 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  ownerChip: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    marginRight: 8,
+    backgroundColor: '#f5f5f5',
+  },
+  ownerChipSelected: { borderColor: TEAL, backgroundColor: TEAL },
+  ownerChipText: { fontSize: 13, color: '#555' },
+  ownerChipTextSelected: { color: '#fff', fontWeight: '700' },
 });

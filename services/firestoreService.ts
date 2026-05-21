@@ -66,14 +66,16 @@ export async function getUserPlaces(uid: string) {
   return getLocalPlaces(uid);
 }
 
-export async function addUserPlace(uid: string, data: Record<string, unknown>) {
+export async function addUserPlace(uid: string, data: Record<string, unknown>, ownerUid?: string) {
   const localId = genLocalId();
-  await upsertLocalPlace(uid, localId, data as Record<string, any>, false, null);
-  await addToSyncQueue('create', 'place', localId, { ...data });
+  const targetPath = ownerUid ?? uid;
+  const localData = ownerUid ? { ...data, ownerUid } : data;
+  await upsertLocalPlace(uid, localId, localData as Record<string, any>, false, null);
+  await addToSyncQueue('create', 'place', localId, { ...localData });
 
   // Best-effort immediate sync
   try {
-    const ref = await addDoc(collection(firestoreDb, `users/${uid}/places`), data);
+    const ref = await addDoc(collection(firestoreDb, `users/${targetPath}/places`), data);
     await markSynced('place', localId, ref.id);
     await removeSyncEntryByLocalId(localId);
   } catch { /* will sync later via queue */ }
@@ -113,14 +115,16 @@ export async function getUserDayPlans(uid: string): Promise<DayPlan[]> {
   return getLocalDayPlans(uid);
 }
 
-export async function addUserDayPlan(uid: string, data: Record<string, unknown>) {
+export async function addUserDayPlan(uid: string, data: Record<string, unknown>, ownerUid?: string) {
   const localId = genLocalId();
-  await upsertLocalDayPlan(uid, localId, data as Record<string, any>, false, null);
-  await addToSyncQueue('create', 'day_plan', localId, { ...data });
+  const targetPath = ownerUid ?? uid;
+  const localData = ownerUid ? { ...data, ownerUid, _source: 'root' } : data;
+  await upsertLocalDayPlan(uid, localId, localData as Record<string, any>, false, null);
+  await addToSyncQueue('create', 'day_plan', localId, { ...localData });
 
   // Best-effort immediate sync
   try {
-    const ref = await addDoc(collection(firestoreDb, `users/${uid}/day_plans`), data);
+    const ref = await addDoc(collection(firestoreDb, `users/${targetPath}/day_plans`), data);
     await markSynced('day_plan', localId, ref.id);
     await removeSyncEntryByLocalId(localId);
   } catch { /* will sync later */ }
@@ -275,8 +279,12 @@ export async function addBuddy(
       addedAt: new Date().toISOString(),
     });
     await updateLocalBuddyFirestoreId(localId, ref.id);
-    // Index so the buddy can discover this owner when they sync
-    await setDoc(doc(firestoreDb, `buddyIndex/${email}/owners/${ownerUid}`), { role });
+    // Index so the buddy can discover this owner when they sync (include ownerEmail for display)
+    const auth = (await import('firebase/auth')).getAuth(firebaseApp);
+    await setDoc(doc(firestoreDb, `buddyIndex/${email}/owners/${ownerUid}`), {
+      role,
+      ownerEmail: auth.currentUser?.email ?? '',
+    });
   } catch { /* will sync later */ }
 }
 
@@ -305,15 +313,19 @@ export async function updateBuddyRole(
   firestoreId?: string | null,
   buddyEmail?: string,
 ): Promise<void> {
-  const db = await import('./db').then((m) => m.getDb());
-  await db.runAsync('UPDATE buddies SET role = ? WHERE id = ?', [role, buddyId]);
+  const localDb = await import('./db').then((m) => m.getDb());
+  await localDb.runAsync('UPDATE buddies SET role = ? WHERE id = ?', [role, buddyId]);
   const target = firestoreId ?? buddyId;
   try {
     await updateDoc(doc(firestoreDb, `users/${ownerUid}/buddies/${target}`), { role });
   } catch { /* offline */ }
   if (buddyEmail) {
     try {
-      await setDoc(doc(firestoreDb, `buddyIndex/${buddyEmail}/owners/${ownerUid}`), { role });
+      const auth = (await import('firebase/auth')).getAuth(firebaseApp);
+      await setDoc(doc(firestoreDb, `buddyIndex/${buddyEmail}/owners/${ownerUid}`), {
+        role,
+        ownerEmail: auth.currentUser?.email ?? '',
+      });
     } catch { /* offline */ }
   }
 }
