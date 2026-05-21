@@ -395,6 +395,14 @@ export async function upsertLocalBuddy(
   firestoreId: string | null,
 ): Promise<void> {
   const db = await getDb();
+  if (firestoreId) {
+    // Delete any orphaned local-only record that was already synced to Firestore
+    // (different local id but same firestoreId), to prevent duplicate entries.
+    await db.runAsync(
+      'DELETE FROM buddies WHERE ownerUid = ? AND firestoreId = ? AND id != ?',
+      [ownerUid, firestoreId, id],
+    );
+  }
   await db.runAsync(
     `INSERT OR REPLACE INTO buddies (id, ownerUid, email, role, addedAt, firestoreId)
      VALUES (?, ?, ?, ?, ?, ?)`,
