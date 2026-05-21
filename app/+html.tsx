@@ -12,6 +12,19 @@ export default function Root({ children }: { children: React.ReactNode }) {
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
 
+        {/* PWA manifest */}
+        <link rel="manifest" href="/manifest.json" />
+
+        {/* PWA theme */}
+        <meta name="theme-color" content="#ffffff" />
+        <meta name="mobile-web-app-capable" content="yes" />
+
+        {/* iOS PWA support */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="TripVilla" />
+        <link rel="apple-touch-icon" href="/assets/images/icon.png" />
+
         {/* 
           Disable body scrolling on web. This makes ScrollView components work closer to how they do on native. 
           However, body scrolling is often nice to have for mobile web. If you want to enable it, remove this line.
@@ -20,7 +33,9 @@ export default function Root({ children }: { children: React.ReactNode }) {
 
         {/* Using raw CSS styles as an escape-hatch to ensure the background color never flickers in dark-mode. */}
         <style dangerouslySetInnerHTML={{ __html: responsiveBackground }} />
-        {/* Add any additional <head> elements that you want globally available on web... */}
+
+        {/* Register service worker for PWA offline support */}
+        <script dangerouslySetInnerHTML={{ __html: serviceWorkerScript }} />
       </head>
       <body>{children}</body>
     </html>
@@ -36,3 +51,13 @@ body {
     background-color: #000;
   }
 }`;
+
+const serviceWorkerScript = `
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function (err) {
+      console.warn('Service worker registration failed:', err);
+    });
+  });
+}
+`;
