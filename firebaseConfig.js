@@ -1,9 +1,9 @@
 export const firebaseConfig = {
-  apiKey: "AIzaSyA5mTaPUUZhPA8A3lDWfU6RvsA55Gm3_4Q",
-  authDomain: "villatrip-64bc3.firebaseapp.com",
-  projectId: "villatrip-64bc3",
-  storageBucket: "villatrip-64bc3.firebasestorage.app",
-  messagingSenderId: "58471064886",
-  appId: "1:58471064886:web:b7bda487e3d28c4cc9ff97",
-  measurementId: "G-HMXCNNHYNT"
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
