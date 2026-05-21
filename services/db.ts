@@ -82,6 +82,35 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
         );
       `);
 
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS trips (
+          id TEXT PRIMARY KEY,
+          uid TEXT NOT NULL,
+          description TEXT,
+          country TEXT,
+          state TEXT,
+          city TEXT,
+          maxCost REAL DEFAULT 0,
+          createdAt TEXT,
+          synced INTEGER DEFAULT 0,
+          firestoreId TEXT
+        );
+      `);
+
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS trip_items (
+          id TEXT PRIMARY KEY,
+          uid TEXT NOT NULL,
+          tripId TEXT NOT NULL,
+          type TEXT,
+          description TEXT,
+          amount REAL DEFAULT 0,
+          createdAt TEXT,
+          synced INTEGER DEFAULT 0,
+          firestoreId TEXT
+        );
+      `);
+
       // Remove duplicatas geradas por race condition:
       // Quando pullFromFirestore criou um segundo registro com id=firestoreId,
       // sendo que já existia um local com id='local_xxx' e firestoreId=mesmo valor.
@@ -114,6 +143,10 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
       await db.execAsync(`ALTER TABLE places ADD COLUMN ownerUid TEXT`).catch(() => {});
       await db.execAsync(`ALTER TABLE day_plans ADD COLUMN ownerUid TEXT`).catch(() => {});
       await db.execAsync(`ALTER TABLE day_plan_items ADD COLUMN ownerUid TEXT`).catch(() => {});
+
+      // Migration: add tripId to places and day_plans
+      await db.execAsync(`ALTER TABLE places ADD COLUMN tripId TEXT`).catch(() => {});
+      await db.execAsync(`ALTER TABLE day_plans ADD COLUMN tripId TEXT`).catch(() => {});
 
       // buddy_owners: owners who have added the current device user as a Travel Planner buddy
       await db.execAsync(`

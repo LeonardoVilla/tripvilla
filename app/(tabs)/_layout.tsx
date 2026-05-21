@@ -18,6 +18,15 @@ export default function TabLayout() {
       <Tabs.Screen name="index" options={{ href: null }} />
       <Tabs.Screen name="two" options={{ href: null }} />
       <Tabs.Screen
+        name="trips"
+        options={{
+          title: 'Viagens',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="airplane-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="places"
         options={{
           title: 'Locais',

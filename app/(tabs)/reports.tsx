@@ -18,7 +18,8 @@ import Toast from 'react-native-toast-message';
 
 import { firebaseApp } from '@/firebaseInit';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
-import { DayPlan, DayPlanItem, getDayPlanItems, getUserDayPlans } from '@/services/firestoreService';
+import { DayPlan, DayPlanItem, getDayPlanItems, getUserDayPlans, getUserTrips, Trip } from '@/services/firestoreService';
+import { getTripFixedTotal, getTripVariableTotal } from '@/services/localDb';
 import { pullFromFirestore } from '@/services/syncService';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -48,6 +49,8 @@ export default function ReportsScreen() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [itemsMap, setItemsMap] = useState<Record<string, DayPlanItem[]>>({});
   const [loadingItems, setLoadingItems] = useState<Set<string>>(new Set());
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [tripTotals, setTripTotals] = useState<Record<string, { fixed: number; variable: number }>>();
 
   const getUid = () => getAuth(firebaseApp).currentUser?.uid;
 
@@ -56,8 +59,24 @@ export default function ReportsScreen() {
       setLoading(true);
       const uid = getUid();
       if (!uid) return;
-      const data = await getUserDayPlans(uid);
+      const [data, tripData] = await Promise.all([
+        getUserDayPlans(uid),
+        getUserTrips(uid),
+      ]);
       setPlans(data);
+      setTrips(tripData);
+      // Load trip totals
+      const totals: Record<string, { fixed: number; variable: number }> = {};
+      await Promise.all(
+        tripData.map(async (t) => {
+          const [fixed, variable] = await Promise.all([
+            getTripFixedTotal(t.id),
+            getTripVariableTotal(t.id),
+          ]);
+          totals[t.id] = { fixed, variable };
+        }),
+      );
+      setTripTotals(totals);
     } catch (err) {
       Toast.show({
         type: 'error',
@@ -75,8 +94,23 @@ export default function ReportsScreen() {
       const uid = getUid();
       if (!uid) return;
       await pullFromFirestore(uid);
-      const data = await getUserDayPlans(uid);
+      const [data, tripData] = await Promise.all([
+        getUserDayPlans(uid),
+        getUserTrips(uid),
+      ]);
       setPlans(data);
+      setTrips(tripData);
+      const totals: Record<string, { fixed: number; variable: number }> = {};
+      await Promise.all(
+        tripData.map(async (t) => {
+          const [fixed, variable] = await Promise.all([
+            getTripFixedTotal(t.id),
+            getTripVariableTotal(t.id),
+          ]);
+          totals[t.id] = { fixed, variable };
+        }),
+      );
+      setTripTotals(totals);
     } catch (err) {
       Toast.show({ type: 'error', text1: 'Erro', text2: getFirebaseErrorMessage(err, 'Falha ao sincronizar.') });
     } finally {
@@ -187,6 +221,53 @@ export default function ReportsScreen() {
               </View>
 
               <Text style={styles.sectionTitle}>Gastos por role</Text>
+              {trips.length > 0 && (
+                <>
+                  <Text style={styles.sectionTitle}>Resumo por Viagem</Text>
+                  {trips.map((trip) => {
+                    const fixed = tripTotals?.[trip.id]?.fixed ?? 0;
+                    const variable = tripTotals?.[trip.id]?.variable ?? 0;
+                    const total = fixed + variable;
+                    const remaining = (trip.maxCost ?? 0) - total;
+                    const pct = (trip.maxCost ?? 0) > 0 ? Math.min((total / trip.maxCost!) * 100, 100) : 0;
+                    return (
+                      <View key={trip.id} style={styles.tripSummaryCard}>
+                        <Text style={styles.tripSummaryTitle}>{trip.description ?? 'Viagem'}</Text>
+                        {(trip.city || trip.country) ? (
+                          <Text style={styles.tripSummaryDest}>
+                            {[trip.city, trip.state, trip.country].filter(Boolean).join(', ')}
+                          </Text>
+                        ) : null}
+                        <View style={styles.tripBudgetRow}>
+                          <View style={styles.tripBudgetCol}>
+                            <Text style={styles.budgetLabel}>Orçamento</Text>
+                            <Text style={styles.budgetValue}>{formatCurrency(trip.maxCost)}</Text>
+                          </View>
+                          <View style={styles.tripBudgetCol}>
+                            <Text style={styles.budgetLabel}>Fixos</Text>
+                            <Text style={styles.budgetValue}>{formatCurrency(fixed)}</Text>
+                          </View>
+                          <View style={styles.tripBudgetCol}>
+                            <Text style={styles.budgetLabel}>Variáveis</Text>
+                            <Text style={styles.budgetValue}>{formatCurrency(variable)}</Text>
+                          </View>
+                          <View style={styles.tripBudgetCol}>
+                            <Text style={styles.budgetLabel}>Saldo</Text>
+                            <Text style={[styles.budgetValue, { color: remaining >= 0 ? TEAL : '#c0392b' }]}>
+                              {formatCurrency(remaining)}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={styles.barBg}>
+                          <View style={[styles.barFill, { width: `${pct}%` as any, backgroundColor: pct > 90 ? '#c0392b' : TEAL }]} />
+                        </View>
+                        <Text style={styles.pctLabel}>{pct.toFixed(1)}% do orçamento utilizado</Text>
+                      </View>
+                    );
+                  })}
+                  <Text style={styles.sectionTitle}>Gastos por role</Text>
+                </>
+              )}
             </>
           }
           renderItem={({ item, index }) => {
@@ -366,5 +447,15 @@ const styles = StyleSheet.create({
   emptyContainer: { alignItems: 'center', marginTop: 60 },
   empty: { fontSize: 15, color: '#888', marginTop: 12, fontWeight: '600' },
   emptySub: { fontSize: 13, color: '#aaa', marginTop: 6, textAlign: 'center' },
+  tripSummaryCard: {
+    backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10,
+    elevation: 2, shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
+  },
+  tripSummaryTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', marginBottom: 2 },
+  tripSummaryDest: { fontSize: 12, color: '#888', marginBottom: 8 },
+  tripBudgetRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  tripBudgetCol: { alignItems: 'center', flex: 1 },
+  budgetLabel: { fontSize: 10, color: '#888', marginBottom: 2 },
+  budgetValue: { fontSize: 13, fontWeight: '700', color: '#222' },
 });
 
