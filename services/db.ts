@@ -115,6 +115,15 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
       await db.execAsync(`ALTER TABLE day_plans ADD COLUMN ownerUid TEXT`).catch(() => {});
       await db.execAsync(`ALTER TABLE day_plan_items ADD COLUMN ownerUid TEXT`).catch(() => {});
 
+      // buddy_owners: owners who have added the current device user as a Travel Planner buddy
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS buddy_owners (
+          ownerUid TEXT PRIMARY KEY,
+          ownerEmail TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'user'
+        );
+      `);
+
       // Remove sync queue entries for records already synced (firestoreId set)
       // These were left behind by the bug where immediate sync succeeded but didn't remove the queue entry.
       await db.execAsync(`

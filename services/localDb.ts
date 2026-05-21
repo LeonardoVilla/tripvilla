@@ -441,3 +441,37 @@ export async function updateLocalBuddyFirestoreId(localId: string, firestoreId: 
   const db = await getDb();
   await db.runAsync('UPDATE buddies SET firestoreId = ? WHERE id = ?', [firestoreId, localId]);
 }
+
+// ─────────────────────── BUDDY OWNERS ───────────────────────
+
+export type BuddyOwner = {
+  ownerUid: string;
+  ownerEmail: string;
+  role: BuddyRole;
+};
+
+/** Upsert an owner entry (called during pullFromFirestore for each buddyIndex entry). */
+export async function upsertBuddyOwner(ownerUid: string, ownerEmail: string, role: BuddyRole): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT OR REPLACE INTO buddy_owners (ownerUid, ownerEmail, role) VALUES (?, ?, ?)`,
+    [ownerUid, ownerEmail, role],
+  );
+}
+
+/** Returns all owners who have added the current device user as a buddy. */
+export async function getBuddyOwners(): Promise<BuddyOwner[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<Record<string, any>>('SELECT * FROM buddy_owners');
+  return rows.map((r) => ({
+    ownerUid: r.ownerUid as string,
+    ownerEmail: r.ownerEmail as string,
+    role: r.role as BuddyRole,
+  }));
+}
+
+/** Remove all owner entries (called before re-sync to keep the table fresh). */
+export async function clearBuddyOwners(): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM buddy_owners');
+}

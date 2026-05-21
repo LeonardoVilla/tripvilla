@@ -2,10 +2,12 @@ import { firebaseApp } from '@/firebaseInit';
 import { getAuth } from 'firebase/auth';
 import { addDoc, collection, getDocs, getFirestore } from 'firebase/firestore';
 import {
+    clearBuddyOwners,
     getPlanFirestoreId,
     getSyncQueue,
     markSynced,
     removeSyncEntry,
+    upsertBuddyOwner,
     upsertLocalDayPlan,
     upsertLocalDayPlanItem,
     upsertLocalPlace,
@@ -58,12 +60,17 @@ export async function pullFromFirestore(uid: string): Promise<void> {
     // Buddy owners' data — look up all owners who added the current user as a buddy
     const myEmail = getAuth(firebaseApp).currentUser?.email;
     if (myEmail) {
+      await clearBuddyOwners();
       try {
         const ownersSnap = await getDocs(
           collection(firestoreDb, `buddyIndex/${myEmail}/owners`),
         );
         for (const ownerDoc of ownersSnap.docs) {
           const ownerUid = ownerDoc.id;
+          const ownerData = ownerDoc.data();
+          const ownerEmail: string = ownerData.ownerEmail ?? '';
+          const role: 'admin' | 'user' = ownerData.role === 'admin' ? 'admin' : 'user';
+          await upsertBuddyOwner(ownerUid, ownerEmail, role);
           // Pull owner's places
           try {
             const placesSnap = await getDocs(collection(firestoreDb, `users/${ownerUid}/places`));

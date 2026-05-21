@@ -3,16 +3,17 @@ import { useRouter } from 'expo-router';
 import { getAuth, signOut } from 'firebase/auth';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -20,6 +21,7 @@ import Toast from 'react-native-toast-message';
 import { firebaseApp } from '@/firebaseInit';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import { addUserDayPlan, DayPlan, deleteUserDayPlan, getUserDayPlans, updateUserDayPlan } from '@/services/firestoreService';
+import { BuddyOwner, getBuddyOwners } from '@/services/localDb';
 import { pullFromFirestore } from '@/services/syncService';
 
 const TEAL = '#1f7a6f';
@@ -54,6 +56,8 @@ export default function DayPlansScreen() {
   const [editTitle, setEditTitle] = useState('');
   const [editDate, setEditDate] = useState('');
   const [editNotes, setEditNotes] = useState('');
+  const [adminOwners, setAdminOwners] = useState<BuddyOwner[]>([]);
+  const [selectedOwnerUid, setSelectedOwnerUid] = useState<string | null>(null);
 
   const getUid = () => getAuth(firebaseApp).currentUser?.uid;
 
@@ -83,6 +87,8 @@ export default function DayPlansScreen() {
       await pullFromFirestore(uid);
       const data = await getUserDayPlans(uid);
       setPlans(data);
+      const owners = await getBuddyOwners();
+      setAdminOwners(owners.filter((o) => o.role === 'admin'));
     } catch (err) {
       Toast.show({ type: 'error', text1: 'Erro', text2: getFirebaseErrorMessage(err, 'Falha ao sincronizar.') });
     } finally {
@@ -92,6 +98,7 @@ export default function DayPlansScreen() {
 
   useEffect(() => {
     loadPlans();
+    getBuddyOwners().then((owners) => setAdminOwners(owners.filter((o) => o.role === 'admin')));
   }, []);
 
   const handleCreate = async () => {
@@ -113,11 +120,12 @@ export default function DayPlansScreen() {
         createdAt: new Date().toISOString(),
         itemCount: 0,
         totalSpent: 0,
-      });
+      }, selectedOwnerUid ?? undefined);
       Toast.show({ type: 'success', text1: 'Role criado!' });
       setTitle('');
       setDate(new Date().toISOString().slice(0, 10));
       setNotes('');
+      setSelectedOwnerUid(null);
       setModalVisible(false);
       await loadPlans();
     } catch (err) {
@@ -268,6 +276,32 @@ export default function DayPlansScreen() {
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setModalVisible(false)} />
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Novo role do dia</Text>
+            {adminOwners.length > 0 && (
+              <>
+                <Text style={styles.ownerLabel}>Criar para</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                  <Pressable
+                    style={[styles.ownerChip, !selectedOwnerUid && styles.ownerChipSelected]}
+                    onPress={() => setSelectedOwnerUid(null)}
+                  >
+                    <Text style={[styles.ownerChipText, !selectedOwnerUid && styles.ownerChipTextSelected]}>
+                      Minha conta
+                    </Text>
+                  </Pressable>
+                  {adminOwners.map((o) => (
+                    <Pressable
+                      key={o.ownerUid}
+                      style={[styles.ownerChip, selectedOwnerUid === o.ownerUid && styles.ownerChipSelected]}
+                      onPress={() => setSelectedOwnerUid(o.ownerUid)}
+                    >
+                      <Text style={[styles.ownerChipText, selectedOwnerUid === o.ownerUid && styles.ownerChipTextSelected]}>
+                        {o.ownerEmail || 'Parceiro'}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </>
+            )}
             <TextInput
               style={styles.input}
               placeholder="Titulo do role"
@@ -461,4 +495,17 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  ownerLabel: { fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 4 },
+  ownerChip: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    marginRight: 8,
+    backgroundColor: '#f5f5f5',
+  },
+  ownerChipSelected: { borderColor: TEAL, backgroundColor: TEAL },
+  ownerChipText: { fontSize: 13, color: '#555' },
+  ownerChipTextSelected: { color: '#fff', fontWeight: '700' },
 });
