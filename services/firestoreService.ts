@@ -352,11 +352,19 @@ export async function getUserTrips(uid: string): Promise<Trip[]> {
 export async function addUserTrip(uid: string, data: Record<string, unknown>): Promise<string> {
   const localId = genLocalId();
   await upsertLocalTrip(uid, localId, data as Record<string, any>, false, null);
+  await addToSyncQueue('create', 'trip', localId, { ...data as Record<string, any>, uid });
+
+  // Best-effort immediate sync
   try {
     const ref = await addDoc(collection(firestoreDb, `users/${uid}/trips`), data);
     await markSynced('trip', localId, ref.id);
-  } catch {
-    await addToSyncQueue('create', 'trip', localId, { ...data as Record<string, any>, uid });
+    await removeSyncEntryByLocalId(localId);
+  } catch (err) {
+    // Log do erro para diagnóstico
+    if (typeof console !== 'undefined' && console.error) {
+      console.error('Erro ao gravar trip no Firestore:', err);
+    }
+    // will sync later via queue
   }
   return localId;
 }
