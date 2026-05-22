@@ -126,6 +126,8 @@ export default function TripsScreen() {
         Toast.show({ type: 'success', text1: 'Viagem atualizada!' });
       } else {
         await addUserTrip(uid, payload);
+        // Sincroniza imediatamente após criar
+        await pushQueueToFirestore(uid);
         Toast.show({ type: 'success', text1: 'Viagem criada!' });
       }
       resetForm();
