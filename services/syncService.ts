@@ -1,8 +1,9 @@
 import { firebaseApp } from '@/firebaseInit';
 import { getAuth } from 'firebase/auth';
-import { addDoc, collection, getDocs, getFirestore } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, getFirestore, updateDoc } from 'firebase/firestore';
 import {
     clearBuddyOwners,
+    getFirestoreId,
     getPlanFirestoreId,
     getSyncQueue,
     markSynced,
@@ -158,7 +159,48 @@ export async function pushQueueToFirestore(uid: string): Promise<number> {
     try {
       const { _dayPlanLocalId, uid: _uid, ...payload } = entry.payload;
 
-      if (entry.entity === 'place') {
+      if (entry.operation === 'delete') {
+        // Handle deletes
+        if (entry.entity === 'place') {
+          const fsId = await getFirestoreId('place', entry.localId);
+          if (fsId) await deleteDoc(doc(firestoreDb, `users/${uid}/places/${fsId}`));
+        } else if (entry.entity === 'day_plan') {
+          const fsId = await getPlanFirestoreId(entry.localId);
+          if (fsId) await deleteDoc(doc(firestoreDb, `users/${uid}/day_plans/${fsId}`));
+        } else if (entry.entity === 'day_plan_item') {
+          const planFirestoreId = await getPlanFirestoreId(_dayPlanLocalId as string);
+          const fsId = await getFirestoreId('day_plan_item', entry.localId);
+          if (planFirestoreId && fsId) {
+            await deleteDoc(doc(firestoreDb, `users/${uid}/day_plans/${planFirestoreId}/items/${fsId}`));
+          }
+        }
+        await removeSyncEntry(entry.id);
+        synced++;
+        continue;
+      }
+
+      if (entry.operation === 'update') {
+        // Handle updates
+        if (entry.entity === 'day_plan') {
+          const fsId = await getPlanFirestoreId(entry.localId);
+          if (fsId) await updateDoc(doc(firestoreDb, `users/${uid}/day_plans/${fsId}`), payload);
+        } else if (entry.entity === 'day_plan_item') {
+          const planFirestoreId = await getPlanFirestoreId(_dayPlanLocalId as string);
+          const fsId = await getFirestoreId('day_plan_item', entry.localId);
+          if (planFirestoreId && fsId) {
+            await updateDoc(doc(firestoreDb, `users/${uid}/day_plans/${planFirestoreId}/items/${fsId}`), payload);
+          }
+        }
+        await removeSyncEntry(entry.id);
+        synced++;
+        continue;
+      }
+
+      // Handle creates
+      if (entry.entity === 'trip') {
+        const ref = await addDoc(collection(firestoreDb, `users/${uid}/trips`), payload);
+        await markSynced('trip', entry.localId, ref.id);
+      } else if (entry.entity === 'place') {
         const ref = await addDoc(collection(firestoreDb, `users/${uid}/places`), payload);
         await markSynced('place', entry.localId, ref.id);
       } else if (entry.entity === 'day_plan') {

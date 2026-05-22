@@ -355,7 +355,9 @@ export async function addUserTrip(uid: string, data: Record<string, unknown>): P
   try {
     const ref = await addDoc(collection(firestoreDb, `users/${uid}/trips`), data);
     await markSynced('trip', localId, ref.id);
-  } catch { /* will sync later */ }
+  } catch {
+    await addToSyncQueue('create', 'trip', localId, { ...data as Record<string, any>, uid });
+  }
   return localId;
 }
 

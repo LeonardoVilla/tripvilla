@@ -341,6 +341,19 @@ export async function markSynced(
   );
 }
 
+export async function getFirestoreId(
+  entity: keyof typeof TABLE_MAP,
+  localId: string,
+): Promise<string | null> {
+  const db = await getDb();
+  const table = TABLE_MAP[entity];
+  const row = await db.getFirstAsync<{ firestoreId: string | null }>(
+    `SELECT firestoreId FROM ${table} WHERE id = ?`,
+    [localId],
+  );
+  return row?.firestoreId ?? null;
+}
+
 // ─────────────────────── SYNC QUEUE ───────────────────────
 
 export async function addToSyncQueue(
