@@ -120,6 +120,7 @@ export default function PlacesScreen() {
     setClosingTime(place.closingTime ?? '18:00');
     setCommuteDuration(place.commuteDuration ?? '30 min');
     setTransportSchedule(place.transportSchedule ?? '');
+    setSelectedTripId((place as any).tripId ?? null);
     setModalVisible(true);
   };
 
@@ -143,6 +144,10 @@ export default function PlacesScreen() {
   const handleSave = async () => {
     if (!name.trim() || !location.trim()) {
       Toast.show({ type: 'error', text1: 'Campos obrigatorios', text2: 'Informe nome e localizacao.' });
+      return;
+    }
+    if (!selectedTripId) {
+      Toast.show({ type: 'error', text1: 'Selecione uma viagem', text2: 'É necessário vincular o local a uma viagem.' });
       return;
     }
     try {
