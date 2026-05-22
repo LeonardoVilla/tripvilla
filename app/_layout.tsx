@@ -92,7 +92,7 @@ function RootLayoutNav() {
     }
 
     if (user && inAuthGroup) {
-      router.replace('/(tabs)/places');
+      router.replace('/(tabs)');
     }
   }, [authLoading, user, segments, router]);
 
