@@ -3,17 +3,17 @@ import { useRouter } from 'expo-router';
 import { getAuth, signOut } from 'firebase/auth';
 import React, { useCallback, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -22,7 +22,7 @@ import { firebaseApp } from '@/firebaseInit';
 import { useFocusRefresh } from '@/hooks/use-focus-refresh';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import { addUserTrip, deleteUserTrip, getUserTrips, Trip, updateUserTrip } from '@/services/firestoreService';
-import { pullFromFirestore } from '@/services/syncService';
+import { pullFromFirestore, pushQueueToFirestore } from '@/services/syncService';
 
 const TEAL = '#1f7a6f';
 const BG = '#eaf4f2';
@@ -69,6 +69,7 @@ export default function TripsScreen() {
       setLoading(true);
       const uid = getUid();
       if (!uid) return;
+      await pushQueueToFirestore(uid);
       await pullFromFirestore(uid);
       const data = await getUserTrips(uid);
       setTrips(data);

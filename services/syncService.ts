@@ -161,7 +161,10 @@ export async function pushQueueToFirestore(uid: string): Promise<number> {
 
       if (entry.operation === 'delete') {
         // Handle deletes
-        if (entry.entity === 'place') {
+        if (entry.entity === 'trip') {
+          const fsId = await getFirestoreId('trip', entry.localId);
+          if (fsId) await deleteDoc(doc(firestoreDb, `users/${uid}/trips/${fsId}`));
+        } else if (entry.entity === 'place') {
           const fsId = await getFirestoreId('place', entry.localId);
           if (fsId) await deleteDoc(doc(firestoreDb, `users/${uid}/places/${fsId}`));
         } else if (entry.entity === 'day_plan') {
@@ -181,7 +184,10 @@ export async function pushQueueToFirestore(uid: string): Promise<number> {
 
       if (entry.operation === 'update') {
         // Handle updates
-        if (entry.entity === 'day_plan') {
+        if (entry.entity === 'trip') {
+          const fsId = await getFirestoreId('trip', entry.localId);
+          if (fsId) await updateDoc(doc(firestoreDb, `users/${uid}/trips/${fsId}`), payload);
+        } else if (entry.entity === 'day_plan') {
           const fsId = await getPlanFirestoreId(entry.localId);
           if (fsId) await updateDoc(doc(firestoreDb, `users/${uid}/day_plans/${fsId}`), payload);
         } else if (entry.entity === 'day_plan_item') {
