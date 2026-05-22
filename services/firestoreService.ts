@@ -368,10 +368,16 @@ export async function updateUserTrip(
   firestoreId?: string | null,
 ): Promise<void> {
   await updateLocalTripFields(localId, data as Record<string, any>);
-  const target = firestoreId ?? localId;
+  if (!firestoreId) {
+    // Trip not yet in Firestore — queue the update for later
+    await addToSyncQueue('update', 'trip', localId, { ...data as Record<string, any>, uid });
+    return;
+  }
   try {
-    await updateDoc(doc(firestoreDb, `users/${uid}/trips/${target}`), data as any);
-  } catch { /* offline */ }
+    await updateDoc(doc(firestoreDb, `users/${uid}/trips/${firestoreId}`), data as any);
+  } catch {
+    await addToSyncQueue('update', 'trip', localId, { ...data as Record<string, any>, uid });
+  }
 }
 
 export async function deleteUserTrip(
@@ -380,10 +386,16 @@ export async function deleteUserTrip(
   firestoreId?: string | null,
 ): Promise<void> {
   await deleteLocalTrip(localId);
-  const target = firestoreId ?? localId;
+  if (!firestoreId) {
+    // Trip not yet in Firestore — queue the delete so it runs when synced
+    await addToSyncQueue('delete', 'trip', localId, { uid });
+    return;
+  }
   try {
-    await deleteDoc(doc(firestoreDb, `users/${uid}/trips/${target}`));
-  } catch { /* offline */ }
+    await deleteDoc(doc(firestoreDb, `users/${uid}/trips/${firestoreId}`));
+  } catch {
+    await addToSyncQueue('delete', 'trip', localId, { uid });
+  }
 }
 
 // ─────────────────────── TRIP ITEMS ───────────────────────
