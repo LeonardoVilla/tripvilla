@@ -56,6 +56,7 @@ export default function DayPlansScreen() {
   const [editTitle, setEditTitle] = useState('');
   const [editDate, setEditDate] = useState('');
   const [editNotes, setEditNotes] = useState('');
+  const [editTripId, setEditTripId] = useState<string | null>(null);
   const [adminOwners, setAdminOwners] = useState<BuddyOwner[]>([]);
   const [selectedOwnerUid, setSelectedOwnerUid] = useState<string | null>(null);
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -165,6 +166,7 @@ export default function DayPlansScreen() {
     setEditTitle(plan.title ?? '');
     setEditDate(plan.date ?? new Date().toISOString().slice(0, 10));
     setEditNotes(plan.notes ?? '');
+    setEditTripId(plan.tripId ?? null);
     setOptionsPlanId(null);
     setEditModalVisible(true);
   };
@@ -182,6 +184,7 @@ export default function DayPlansScreen() {
         title: editTitle.trim(),
         date: editDate,
         notes: editNotes.trim(),
+        tripId: editTripId,
       }, editingPlan.firestoreId);
       Toast.show({ type: 'success', text1: 'Role atualizado!' });
       setEditModalVisible(false);
@@ -378,6 +381,25 @@ export default function DayPlansScreen() {
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditModalVisible(false)} />
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Editar role</Text>
+            {trips.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                <Pressable
+                  style={[styles.ownerChip, !editTripId && styles.ownerChipSelected]}
+                  onPress={() => setEditTripId(null)}
+                >
+                  <Text style={[styles.ownerChipText, !editTripId && styles.ownerChipTextSelected]}>Sem viagem</Text>
+                </Pressable>
+                {trips.map((t) => (
+                  <Pressable
+                    key={t.id}
+                    style={[styles.ownerChip, editTripId === t.id && styles.ownerChipSelected]}
+                    onPress={() => setEditTripId(t.id)}
+                  >
+                    <Text style={[styles.ownerChipText, editTripId === t.id && styles.ownerChipTextSelected]}>{t.title}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            )}
             <TextInput
               style={styles.input}
               placeholder="Titulo do role"
