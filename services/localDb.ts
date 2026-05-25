@@ -381,7 +381,7 @@ export async function getSyncQueue(): Promise<Array<{
   const rows = await db.getAllAsync<Record<string, any>>(
     'SELECT * FROM pending_sync ORDER BY createdAt ASC',
   );
-  return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload as string) }));
+  return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload as string) })) as any;
 }
 
 export async function removeSyncEntry(id: string) {
@@ -409,6 +409,7 @@ export type Buddy = {
   ownerUid: string;
   email: string;
   role: BuddyRole;
+  tripIds: string[];
   addedAt?: string;
   firestoreId?: string | null;
 };
@@ -424,6 +425,7 @@ export async function getLocalBuddies(ownerUid: string): Promise<Buddy[]> {
     ownerUid: r.ownerUid as string,
     email: r.email as string,
     role: r.role as BuddyRole,
+    tripIds: r.tripIds ? (JSON.parse(r.tripIds) as string[]) : [],
     addedAt: r.addedAt as string | undefined,
     firestoreId: r.firestoreId as string | null | undefined,
   }));
@@ -435,20 +437,19 @@ export async function upsertLocalBuddy(
   email: string,
   role: BuddyRole,
   firestoreId: string | null,
+  tripIds: string[] = [],
 ): Promise<void> {
   const db = await getDb();
   if (firestoreId) {
-    // Delete any orphaned local-only record that was already synced to Firestore
-    // (different local id but same firestoreId), to prevent duplicate entries.
     await db.runAsync(
       'DELETE FROM buddies WHERE ownerUid = ? AND firestoreId = ? AND id != ?',
       [ownerUid, firestoreId, id],
     );
   }
   await db.runAsync(
-    `INSERT OR REPLACE INTO buddies (id, ownerUid, email, role, addedAt, firestoreId)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [id, ownerUid, email, role, new Date().toISOString(), firestoreId],
+    `INSERT OR REPLACE INTO buddies (id, ownerUid, email, role, addedAt, firestoreId, tripIds)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [id, ownerUid, email, role, new Date().toISOString(), firestoreId, JSON.stringify(tripIds)],
   );
 }
 
@@ -462,20 +463,31 @@ export async function updateLocalBuddyFirestoreId(localId: string, firestoreId: 
   await db.runAsync('UPDATE buddies SET firestoreId = ? WHERE id = ?', [firestoreId, localId]);
 }
 
+export async function updateLocalBuddyTripIds(id: string, tripIds: string[]): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE buddies SET tripIds = ? WHERE id = ?', [JSON.stringify(tripIds), id]);
+}
+
 // ─────────────────────── BUDDY OWNERS ───────────────────────
 
 export type BuddyOwner = {
   ownerUid: string;
   ownerEmail: string;
   role: BuddyRole;
+  tripIds: string[];
 };
 
 /** Upsert an owner entry (called during pullFromFirestore for each buddyIndex entry). */
-export async function upsertBuddyOwner(ownerUid: string, ownerEmail: string, role: BuddyRole): Promise<void> {
+export async function upsertBuddyOwner(
+  ownerUid: string,
+  ownerEmail: string,
+  role: BuddyRole,
+  tripIds: string[] = [],
+): Promise<void> {
   const db = await getDb();
   await db.runAsync(
-    `INSERT OR REPLACE INTO buddy_owners (ownerUid, ownerEmail, role) VALUES (?, ?, ?)`,
-    [ownerUid, ownerEmail, role],
+    `INSERT OR REPLACE INTO buddy_owners (ownerUid, ownerEmail, role, tripIds) VALUES (?, ?, ?, ?)`,
+    [ownerUid, ownerEmail, role, JSON.stringify(tripIds)],
   );
 }
 
@@ -487,6 +499,7 @@ export async function getBuddyOwners(): Promise<BuddyOwner[]> {
     ownerUid: r.ownerUid as string,
     ownerEmail: r.ownerEmail as string,
     role: r.role as BuddyRole,
+    tripIds: r.tripIds ? (JSON.parse(r.tripIds) as string[]) : [],
   }));
 }
 

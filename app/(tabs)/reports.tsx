@@ -1,49 +1,36 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { getAuth, signOut } from 'firebase/auth';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    LayoutAnimation,
-    Platform,
-    Pressable,
-    StyleSheet,
-    Text,
-    UIManager,
-    View,
+  ActivityIndicator,
+  FlatList,
+  LayoutAnimation,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  UIManager,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 
-import { firebaseApp } from '@/firebaseInit';
+import { BG, shadowCard, TEAL } from '@/constants/AppTheme';
+import { useAuth } from '@/context/AuthContext';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import { DayPlan, DayPlanItem, getDayPlanItems, getUserDayPlans, getUserTrips, Trip } from '@/services/firestoreService';
 import { getTripFixedTotal, getTripVariableTotal } from '@/services/localDb';
 import { pullFromFirestore } from '@/services/syncService';
+import { formatCurrency, formatDate } from '@/utils/format';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const TEAL = '#1f7a6f';
-const BG = '#eaf4f2';
-
-function formatDate(dateStr?: string) {
-  if (!dateStr) return '-';
-  const parts = dateStr.split('-');
-  if (parts.length !== 3) return dateStr;
-  return `${parts[2]}/${parts[1]}/${parts[0]}`;
-}
-
-function formatCurrency(value?: number) {
-  const n = value ?? 0;
-  return `R$ ${n.toFixed(2).replace('.', ',')}`;
-}
-
 export default function ReportsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { user, signOut } = useAuth();
   const [loading, setLoading] = useState(true);
   const [plans, setPlans] = useState<DayPlan[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -52,20 +39,16 @@ export default function ReportsScreen() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [tripTotals, setTripTotals] = useState<Record<string, { fixed: number; variable: number }>>();
 
-  const getUid = () => getAuth(firebaseApp).currentUser?.uid;
-
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const uid = getUid();
-      if (!uid) return;
+      if (!user) return;
       const [data, tripData] = await Promise.all([
-        getUserDayPlans(uid),
-        getUserTrips(uid),
+        getUserDayPlans(user.uid),
+        getUserTrips(user.uid),
       ]);
       setPlans(data);
       setTrips(tripData);
-      // Load trip totals
       const totals: Record<string, { fixed: number; variable: number }> = {};
       await Promise.all(
         tripData.map(async (t) => {
@@ -81,22 +64,21 @@ export default function ReportsScreen() {
       Toast.show({
         type: 'error',
         text1: 'Erro',
-        text2: getFirebaseErrorMessage(err, 'Falha ao carregar relatorios.'),
+        text2: getFirebaseErrorMessage(err, 'Falha ao carregar relatórios.'),
       });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   const handleSync = useCallback(async () => {
     try {
       setLoading(true);
-      const uid = getUid();
-      if (!uid) return;
-      await pullFromFirestore(uid);
+      if (!user) return;
+      await pullFromFirestore(user.uid);
       const [data, tripData] = await Promise.all([
-        getUserDayPlans(uid),
-        getUserTrips(uid),
+        getUserDayPlans(user.uid),
+        getUserTrips(user.uid),
       ]);
       setPlans(data);
       setTrips(tripData);
@@ -116,15 +98,14 @@ export default function ReportsScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
   const toggleExpand = async (plan: DayPlan) => {
-    const uid = getUid();
-    if (!uid) return;
+    if (!user) return;
 
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
@@ -138,7 +119,7 @@ export default function ReportsScreen() {
     if (!itemsMap[plan.id]) {
       setLoadingItems((prev) => new Set(prev).add(plan.id));
       try {
-        const items = await getDayPlanItems(uid, plan.id, plan._source);
+        const items = await getDayPlanItems(user.uid, plan.id, plan._source);
         setItemsMap((prev) => ({ ...prev, [plan.id]: items }));
       } catch {
         Toast.show({ type: 'error', text1: 'Erro ao carregar detalhes.' });
@@ -150,12 +131,11 @@ export default function ReportsScreen() {
 
   const handleLogout = async () => {
     try {
-      await signOut(getAuth(firebaseApp));
+      await signOut();
       router.replace('/auth/login');
     } catch {}
   };
 
-  // Summary calculations
   const totalGasto = plans.reduce((acc, p) => acc + (p.totalSpent ?? 0), 0);
   const totalParadas = plans.reduce((acc, p) => acc + (p.itemCount ?? 0), 0);
   const mediaGasto = plans.length > 0 ? totalGasto / plans.length : 0;
@@ -164,14 +144,12 @@ export default function ReportsScreen() {
     null,
   );
 
-  // Sort by totalSpent descending for the list
   const sortedPlans = [...plans].sort((a, b) => (b.totalSpent ?? 0) - (a.totalSpent ?? 0));
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Text style={styles.headerTitle}>Relatorios</Text>
+        <Text style={styles.headerTitle}>Relatórios</Text>
         <View style={styles.headerActions}>
           <Pressable onPress={handleSync} style={styles.iconBtn}>
             <Ionicons name="sync-outline" size={24} color="#333" />
@@ -191,7 +169,6 @@ export default function ReportsScreen() {
           contentContainerStyle={styles.list}
           ListHeaderComponent={
             <>
-              {/* Summary cards */}
               <View style={styles.summaryRow}>
                 <View style={[styles.summaryCard, { flex: 1 }]}>
                   <Ionicons name="cash-outline" size={22} color={TEAL} />
@@ -209,7 +186,7 @@ export default function ReportsScreen() {
                 <View style={[styles.summaryCard, { flex: 1 }]}>
                   <Ionicons name="analytics-outline" size={22} color={TEAL} />
                   <Text style={styles.summaryValue}>{formatCurrency(mediaGasto)}</Text>
-                  <Text style={styles.summaryLabel}>Media por role</Text>
+                  <Text style={styles.summaryLabel}>Média por role</Text>
                 </View>
                 <View style={[styles.summaryCard, { flex: 1, marginLeft: 10 }]}>
                   <Ionicons name="trophy-outline" size={22} color={TEAL} />
@@ -283,7 +260,7 @@ export default function ReportsScreen() {
                   </View>
                   <View style={styles.cardContent}>
                     <Text style={styles.cardName} numberOfLines={1}>
-                      {item.title ?? 'Sem titulo'}
+                      {item.title ?? 'Sem título'}
                     </Text>
                     <Text style={styles.cardDate}>Data: {formatDate(item.date)}</Text>
                   </View>
@@ -300,13 +277,11 @@ export default function ReportsScreen() {
                   </Pressable>
                 </View>
 
-                {/* Progress bar */}
                 <View style={styles.barBg}>
                   <View style={[styles.barFill, { width: `${pct}%` }]} />
                 </View>
                 <Text style={styles.pctLabel}>{pct.toFixed(1)}% do total</Text>
 
-                {/* Detalhes expandidos */}
                 {isExpanded && (
                   <View style={styles.detailsContainer}>
                     <View style={styles.detailsDivider} />
@@ -315,7 +290,7 @@ export default function ReportsScreen() {
                     ) : details.length === 0 ? (
                       <Text style={styles.detailsEmpty}>Nenhuma visita registrada.</Text>
                     ) : (
-                      details.map((detail, i) => (
+                      details.map((detail) => (
                         <View key={detail.id} style={styles.detailItem}>
                           <View style={styles.detailDot} />
                           <View style={styles.detailInfo}>
@@ -353,7 +328,7 @@ export default function ReportsScreen() {
             <View style={styles.emptyContainer}>
               <Ionicons name="bar-chart-outline" size={48} color="#ccc" />
               <Text style={styles.empty}>Nenhum dado de gasto encontrado.</Text>
-              <Text style={styles.emptySub}>Crie roles e adicione locais para ver os relatorios.</Text>
+              <Text style={styles.emptySub}>Crie roles e adicione locais para ver os relatórios.</Text>
             </View>
           }
         />
@@ -382,10 +357,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     alignItems: 'center',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    ...shadowCard,
   },
   summaryValue: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginTop: 6, textAlign: 'center' },
   summaryLabel: { fontSize: 11, color: '#888', marginTop: 2, textAlign: 'center' },
@@ -395,10 +367,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     marginBottom: 10,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    ...shadowCard,
   },
   cardTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   rankBadge: {
@@ -449,7 +418,7 @@ const styles = StyleSheet.create({
   emptySub: { fontSize: 13, color: '#aaa', marginTop: 6, textAlign: 'center' },
   tripSummaryCard: {
     backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10,
-    elevation: 2, shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
+    ...shadowCard,
   },
   tripSummaryTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', marginBottom: 2 },
   tripSummaryDest: { fontSize: 12, color: '#888', marginBottom: 8 },
@@ -458,4 +427,3 @@ const styles = StyleSheet.create({
   budgetLabel: { fontSize: 10, color: '#888', marginBottom: 2 },
   budgetValue: { fontSize: 13, fontWeight: '700', color: '#222' },
 });
-

@@ -29,18 +29,10 @@ import {
     getUserPlaces,
     updateDayPlanItem,
 } from '@/services/firestoreService';
-
-const TEAL = '#1f7a6f';
-const BG = '#eaf4f2';
+import { BG, shadowCard, shadowFab, shadowMenu, TEAL } from '@/constants/AppTheme';
+import { formatDate } from '@/utils/format';
 
 type Place = { id: string; name?: string; location?: string };
-
-function formatDate(dateStr?: string) {
-  if (!dateStr) return '-';
-  const parts = dateStr.split('-');
-  if (parts.length !== 3) return dateStr;
-  return `${parts[2]}/${parts[1]}/${parts[0]}`;
-}
 
 function formatCurrency(value?: number) {
   const n = value ?? 0;
@@ -482,12 +474,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     marginBottom: 12,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
     alignSelf: 'center',
     width: '70%',
+    ...shadowCard,
   },
   summaryTitle: { fontSize: 14, fontWeight: '700', marginBottom: 6, color: '#1a1a1a' },
   summaryDetail: { fontSize: 13, color: '#555', marginBottom: 2 },
@@ -498,10 +487,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    ...shadowCard,
   },
   cardContent: { flex: 1 },
   cardName: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginBottom: 4 },
@@ -515,11 +501,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingVertical: 4,
     minWidth: 120,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
     zIndex: 100,
+    ...shadowMenu,
   },
   optionsMenuItem: {
     flexDirection: 'row',
@@ -541,10 +524,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 18,
     paddingVertical: 12,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
+    ...shadowFab,
   },
   fabText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   overlay: {

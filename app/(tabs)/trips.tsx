@@ -1,6 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { getAuth, signOut } from 'firebase/auth';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -18,23 +17,18 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 
-import { firebaseApp } from '@/firebaseInit';
+import { BG, shadowCard, shadowFab, TEAL } from '@/constants/AppTheme';
+import { useAuth } from '@/context/AuthContext';
 import { useFocusRefresh } from '@/hooks/use-focus-refresh';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import { addUserTrip, deleteUserTrip, getUserTrips, Trip, updateUserTrip } from '@/services/firestoreService';
 import { pullFromFirestore, pushQueueToFirestore } from '@/services/syncService';
-
-const TEAL = '#1f7a6f';
-const BG = '#eaf4f2';
-
-function formatCurrency(value?: number) {
-  const n = value ?? 0;
-  return `R$ ${n.toFixed(2).replace('.', ',')}`;
-}
+import { formatCurrency } from '@/utils/format';
 
 export default function TripsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { user, signOut } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -48,14 +42,11 @@ export default function TripsScreen() {
   const [city, setCity] = useState('');
   const [maxCost, setMaxCost] = useState('0,00');
 
-  const getUid = () => getAuth(firebaseApp).currentUser?.uid;
-
   const loadTrips = async () => {
     try {
       setLoading(true);
-      const uid = getUid();
-      if (!uid) return;
-      const data = await getUserTrips(uid);
+      if (!user) return;
+      const data = await getUserTrips(user.uid);
       setTrips(data);
     } catch (err) {
       Toast.show({ type: 'error', text1: 'Erro', text2: getFirebaseErrorMessage(err, 'Falha ao carregar viagens.') });
@@ -67,18 +58,17 @@ export default function TripsScreen() {
   const handleSync = useCallback(async () => {
     try {
       setLoading(true);
-      const uid = getUid();
-      if (!uid) return;
-      await pushQueueToFirestore(uid);
-      await pullFromFirestore(uid);
-      const data = await getUserTrips(uid);
+      if (!user) return;
+      await pushQueueToFirestore(user.uid);
+      await pullFromFirestore(user.uid);
+      const data = await getUserTrips(user.uid);
       setTrips(data);
     } catch (err) {
       Toast.show({ type: 'error', text1: 'Erro', text2: getFirebaseErrorMessage(err, 'Falha ao sincronizar.') });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useFocusRefresh(handleSync);
 
@@ -111,8 +101,7 @@ export default function TripsScreen() {
     }
     try {
       setSaving(true);
-      const uid = getUid();
-      if (!uid) return;
+      if (!user) return;
       const payload = {
         description: description.trim(),
         country: country.trim(),
@@ -122,12 +111,11 @@ export default function TripsScreen() {
         createdAt: editingTrip?.createdAt ?? new Date().toISOString(),
       };
       if (editingTrip) {
-        await updateUserTrip(uid, editingTrip.id, payload, editingTrip.firestoreId);
+        await updateUserTrip(user.uid, editingTrip.id, payload, editingTrip.firestoreId);
         Toast.show({ type: 'success', text1: 'Viagem atualizada!' });
       } else {
-        await addUserTrip(uid, payload);
-        // Sincroniza imediatamente após criar
-        await pushQueueToFirestore(uid);
+        await addUserTrip(user.uid, payload);
+        await pushQueueToFirestore(user.uid);
         Toast.show({ type: 'success', text1: 'Viagem criada!' });
       }
       resetForm();
@@ -142,10 +130,9 @@ export default function TripsScreen() {
 
   const handleDelete = async (trip: Trip) => {
     setOptionsTripId(null);
-    const uid = getUid();
-    if (!uid) return;
+    if (!user) return;
     try {
-      await deleteUserTrip(uid, trip.id, trip.firestoreId);
+      await deleteUserTrip(user.uid, trip.id, trip.firestoreId);
       setTrips((prev) => prev.filter((t) => t.id !== trip.id));
       Toast.show({ type: 'success', text1: 'Viagem excluída.' });
     } catch (err) {
@@ -155,7 +142,7 @@ export default function TripsScreen() {
 
   const handleLogout = async () => {
     try {
-      await signOut(getAuth(firebaseApp));
+      await signOut();
       router.replace('/auth/login');
     } catch {}
   };
@@ -316,8 +303,7 @@ const styles = StyleSheet.create({
   iconBtn: { padding: 4 },
   card: {
     backgroundColor: '#fff', borderRadius: 12, padding: 14,
-    marginBottom: 12, elevation: 2,
-    shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
+    marginBottom: 12, ...shadowCard,
   },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', flex: 1 },
@@ -331,8 +317,7 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute', right: 20, backgroundColor: TEAL,
     width: 56, height: 56, borderRadius: 28, alignItems: 'center',
-    justifyContent: 'center', elevation: 5,
-    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
+    justifyContent: 'center', ...shadowFab,
   },
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
   modalContent: {

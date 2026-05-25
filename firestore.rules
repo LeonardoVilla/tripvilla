@@ -1,0 +1,70 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    // Verifica se o usuário autenticado é buddy do dono (userId)
+    // Lê o índice: buddyIndex/{email do usuário logado}/owners/{userId}
+    function isBuddy(userId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/buddyIndex/$(request.auth.token.email)/owners/$(userId));
+    }
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // ── Viagens ────────────────────────────────────────────────────────────────
+    // Apenas o dono acessa suas viagens e custos fixos
+    match /users/{userId}/trips/{tripId} {
+      allow read, write: if isOwner(userId);
+
+      match /items/{itemId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // ── Locais ─────────────────────────────────────────────────────────────────
+    // Dono: leitura e escrita
+    // Buddy Travel Planner (admin): leitura
+    // Buddy Ride-along (user): leitura
+    match /users/{userId}/places/{placeId} {
+      allow read: if isOwner(userId) || isBuddy(userId);
+      allow write: if isOwner(userId);
+    }
+
+    // ── Roles do Dia ───────────────────────────────────────────────────────────
+    // Dono: leitura e escrita
+    // Buddy: leitura
+    match /users/{userId}/day_plans/{planId} {
+      allow read: if isOwner(userId) || isBuddy(userId);
+      allow write: if isOwner(userId);
+
+      match /items/{itemId} {
+        allow read: if isOwner(userId) || isBuddy(userId);
+        allow write: if isOwner(userId);
+      }
+    }
+
+    // ── Buddies (lista do dono) ─────────────────────────────────────────────────
+    // Apenas o dono gerencia sua lista de buddies
+    match /users/{userId}/buddies/{buddyId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // ── Índice de Buddy (buddyIndex) ────────────────────────────────────────────
+    // Estrutura: buddyIndex/{email}/owners/{ownerUid}
+    //
+    // Leitura:  somente o usuário cujo email bate com o segmento {email}
+    //           (para o buddy descobrir quem o adicionou ao sincronizar)
+    // Escrita:  usuário autenticado qualquer (o dono grava ao adicionar/remover buddy)
+    //           — restrição extra: só o dono pode escrever no sub-caminho do seu próprio uid
+    match /buddyIndex/{email}/owners/{ownerUid} {
+      allow read:  if request.auth != null && request.auth.token.email == email;
+      allow write: if request.auth != null && request.auth.uid == ownerUid;
+      allow delete: if request.auth != null && request.auth.uid == ownerUid;
+    }
+  }
+}

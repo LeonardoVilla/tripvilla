@@ -148,6 +148,10 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
       await db.execAsync(`ALTER TABLE places ADD COLUMN tripId TEXT`).catch(() => {});
       await db.execAsync(`ALTER TABLE day_plans ADD COLUMN tripId TEXT`).catch(() => {});
 
+      // Migration: tripIds (JSON array) on buddies — which trips each buddy can see
+      await db.execAsync(`ALTER TABLE buddies ADD COLUMN tripIds TEXT`).catch(() => {});
+      await db.execAsync(`ALTER TABLE buddy_owners ADD COLUMN tripIds TEXT`).catch(() => {});
+
       // buddy_owners: owners who have added the current device user as a Travel Planner buddy
       await db.execAsync(`
         CREATE TABLE IF NOT EXISTS buddy_owners (

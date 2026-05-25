@@ -29,14 +29,8 @@ import {
     updateTripItem,
 } from '@/services/firestoreService';
 import { getTripFixedTotal, getTripVariableTotal } from '@/services/localDb';
-
-const TEAL = '#1f7a6f';
-const BG = '#eaf4f2';
-
-function formatCurrency(value?: number) {
-  const n = value ?? 0;
-  return `R$ ${n.toFixed(2).replace('.', ',')}`;
-}
+import { BG, shadowCard, shadowFab, TEAL } from '@/constants/AppTheme';
+import { formatCurrency } from '@/utils/format';
 
 export default function TripDetailScreen() {
   const router = useRouter();
@@ -307,7 +301,7 @@ const styles = StyleSheet.create({
   headerTitle: { flex: 1, fontSize: 17, fontWeight: '700', color: '#222' },
   budgetCard: {
     backgroundColor: '#fff', margin: 12, borderRadius: 14, padding: 14,
-    elevation: 2, shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
+    ...shadowCard,
   },
   budgetRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   budgetCol: { alignItems: 'center', flex: 1 },
@@ -319,8 +313,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 14, fontWeight: '700', color: '#555', marginHorizontal: 16, marginTop: 8, marginBottom: 4 },
   card: {
     backgroundColor: '#fff', borderRadius: 12, padding: 14,
-    marginBottom: 10, elevation: 2,
-    shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
+    marginBottom: 10, ...shadowCard,
   },
   cardRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   itemType: { fontSize: 11, color: TEAL, fontWeight: '600', textTransform: 'uppercase' },
@@ -333,8 +326,7 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute', right: 20, backgroundColor: TEAL,
     width: 56, height: 56, borderRadius: 28, alignItems: 'center',
-    justifyContent: 'center', elevation: 5,
-    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
+    justifyContent: 'center', ...shadowFab,
   },
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
   modalContent: {
