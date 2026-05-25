@@ -24,7 +24,9 @@
       "mcp__playwright__browser_wait_for",
       "Bash(git fetch *)",
       "Bash(git merge *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git pull *)"
     ]
   }
 }
