@@ -271,14 +271,8 @@ export async function addDayPlanItem(
 export { Buddy, BuddyRole };
 
 export async function getBuddies(ownerUid: string): Promise<Buddy[]> {
-  try {
-    const snap = await getDocs(collection(firestoreDb, `users/${ownerUid}/buddies`));
-    for (const d of snap.docs) {
-      const data = d.data() as Record<string, any>;
-      const tripIds = Array.isArray(data.tripIds) ? data.tripIds : [];
-      await upsertLocalBuddy(ownerUid, d.id, data.email, data.role, d.id, tripIds);
-    }
-  } catch { /* offline */ }
+  // Read only from local SQLite — pullFromFirestore already synced Firestore → SQLite.
+  // Fetching from Firestore here would overwrite local role/tripId changes made mid-session.
   return getLocalBuddies(ownerUid);
 }
 
