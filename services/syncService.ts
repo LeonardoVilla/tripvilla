@@ -1,14 +1,16 @@
 import { firebaseApp } from '@/firebaseInit';
 import { getAuth } from 'firebase/auth';
-import { addDoc, collection, deleteDoc, doc, getDocs, getFirestore, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, getFirestore, setDoc, updateDoc } from 'firebase/firestore';
 import {
     clearBuddyOwners,
     getFirestoreId,
+    getLocalBuddies,
     getPlanFirestoreId,
     getSyncQueue,
     incrementSyncRetry,
     markSynced,
     removeSyncEntry,
+    updateLocalBuddyFirestoreId,
     upsertBuddyOwner,
     upsertLocalDayPlan,
     upsertLocalDayPlanItem,
@@ -153,6 +155,8 @@ export async function pullFromFirestore(uid: string): Promise<void> {
  * Returns the number of successfully synced entries.
  */
 export async function pushQueueToFirestore(uid: string): Promise<number> {
+  await syncPendingBuddies(uid);
+
   const queue = await getSyncQueue();
   if (queue.length === 0) return 0;
 
@@ -275,6 +279,38 @@ export async function pushQueueToFirestore(uid: string): Promise<number> {
   }
 
   return synced;
+}
+
+/**
+ * Re-syncs any buddies that were added offline and never reached Firestore.
+ * Runs as part of push to guarantee buddyIndex is always created.
+ */
+async function syncPendingBuddies(uid: string): Promise<void> {
+  const ownerEmail = getAuth(firebaseApp).currentUser?.email ?? '';
+  const buddies = await getLocalBuddies(uid);
+
+  for (const buddy of buddies) {
+    try {
+      if (!buddy.firestoreId) {
+        const ref = await addDoc(collection(firestoreDb, `users/${uid}/buddies`), {
+          email: buddy.email,
+          role: buddy.role,
+          tripIds: buddy.tripIds ?? [],
+          addedAt: buddy.addedAt ?? new Date().toISOString(),
+        });
+        await updateLocalBuddyFirestoreId(buddy.id, ref.id);
+        buddy.firestoreId = ref.id;
+      }
+      // Always keep buddyIndex in sync (idempotent)
+      await setDoc(doc(firestoreDb, `buddyIndex/${buddy.email}/owners/${uid}`), {
+        role: buddy.role,
+        tripIds: buddy.tripIds ?? [],
+        ownerEmail,
+      });
+    } catch {
+      // Network error — retries on next pushQueueToFirestore call
+    }
+  }
 }
 
 /** Push pending queue, then pull fresh data from Firestore. */

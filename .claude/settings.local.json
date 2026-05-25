@@ -8,7 +8,9 @@
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(Get-ChildItem -Path c:\\\\repos\\\\tripvilla -Recurse -Depth 2)",
       "Bash(Select-Object FullName)",
-      "Bash(xargs grep -l \"syncAll\\\\|pullFromFirestore\\\\|pushQueueToFirestore\")"
+      "Bash(xargs grep -l \"syncAll\\\\|pullFromFirestore\\\\|pushQueueToFirestore\")",
+      "Bash(firebase --version)",
+      "PowerShell(firebase --version 2>&1)"
     ]
   }
 }

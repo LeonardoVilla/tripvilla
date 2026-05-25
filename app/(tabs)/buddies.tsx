@@ -75,6 +75,8 @@ export default function BuddiesScreen() {
   const [selectedTripIds, setSelectedTripIds] = useState<string[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [optionsBuddyId, setOptionsBuddyId] = useState<string | null>(null);
+  const [editTripsBuddy, setEditTripsBuddy] = useState<Buddy | null>(null);
+  const [editTripIds, setEditTripIds] = useState<string[]>([]);
 
   const loadBuddies = useCallback(async () => {
     try {
@@ -147,6 +149,30 @@ export default function BuddiesScreen() {
       Toast.show({ type: 'success', text1: 'Permissão atualizada!' });
     } catch (err) {
       Toast.show({ type: 'error', text1: 'Erro', text2: getFirebaseErrorMessage(err, 'Não foi possível atualizar.') });
+    }
+  };
+
+  const handleSaveTrips = async () => {
+    if (!user || !editTripsBuddy) return;
+    try {
+      setSaving(true);
+      await updateBuddyRole(
+        user.uid,
+        editTripsBuddy.id,
+        editTripsBuddy.role,
+        editTripsBuddy.firestoreId,
+        editTripsBuddy.email,
+        editTripIds,
+      );
+      setBuddies((prev) =>
+        prev.map((b) => (b.id === editTripsBuddy.id ? { ...b, tripIds: editTripIds } : b)),
+      );
+      setEditTripsBuddy(null);
+      Toast.show({ type: 'success', text1: 'Viagens atualizadas!' });
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Erro', text2: getFirebaseErrorMessage(err, 'Não foi possível atualizar.') });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -243,6 +269,21 @@ export default function BuddiesScreen() {
                       </View>
                     </Pressable>
                   ))}
+                  <View style={styles.optionsDivider} />
+                  <Pressable
+                    style={styles.optionsItem}
+                    onPress={() => {
+                      setOptionsBuddyId(null);
+                      setEditTripsBuddy(item);
+                      setEditTripIds(item.tripIds ?? []);
+                    }}
+                  >
+                    <Ionicons name="airplane-outline" size={15} color="#555" />
+                    <View>
+                      <Text style={styles.optionsItemLabel}>Editar viagens</Text>
+                      <Text style={styles.optionsItemDesc}>Alterar quais viagens são compartilhadas</Text>
+                    </View>
+                  </Pressable>
                   <View style={styles.optionsDivider} />
                   <Pressable style={styles.optionsItemRemove} onPress={() => handleRemove(item)}>
                     <Ionicons name="trash-outline" size={15} color="#e53935" />
@@ -354,6 +395,61 @@ export default function BuddiesScreen() {
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.btnPrimaryText}>Adicionar</Text>
+              )}
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Modal de edição de viagens do buddy */}
+      <Modal
+        visible={!!editTripsBuddy}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditTripsBuddy(null)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditTripsBuddy(null)} />
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Viagens compartilhadas</Text>
+            <Text style={styles.label}>{editTripsBuddy?.email}</Text>
+            {trips.filter((t) => !t.ownerUid).length === 0 ? (
+              <Text style={styles.noTripsHint}>Nenhuma viagem disponível.</Text>
+            ) : (
+              <View style={styles.tripChipsRow}>
+                {trips.filter((t) => !t.ownerUid).map((t) => {
+                  const selected = editTripIds.includes(t.id);
+                  return (
+                    <Pressable
+                      key={t.id}
+                      style={[styles.tripChip, selected && styles.tripChipActive]}
+                      onPress={() =>
+                        setEditTripIds((prev) =>
+                          selected ? prev.filter((id) => id !== t.id) : [...prev, t.id],
+                        )
+                      }
+                    >
+                      <Ionicons name="airplane-outline" size={12} color={selected ? '#fff' : TEAL} />
+                      <Text style={[styles.tripChipText, selected && styles.tripChipTextActive]}>
+                        {t.description}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+            <Pressable
+              style={[styles.btnPrimary, saving && { opacity: 0.7 }]}
+              onPress={handleSaveTrips}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.btnPrimaryText}>Salvar</Text>
               )}
             </Pressable>
           </View>
