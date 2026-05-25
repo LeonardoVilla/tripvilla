@@ -95,9 +95,6 @@ export async function pullFromFirestore(uid: string): Promise<void> {
           const tripIds: string[] = Array.isArray(ownerData.tripIds) ? ownerData.tripIds : [];
           await upsertBuddyOwner(ownerUid, ownerEmail, role, tripIds);
 
-          // Só puxa dados das viagens às quais o buddy foi adicionado
-          if (tripIds.length === 0) continue;
-
           // Pull trips compartilhadas com este buddy
           // tripIds do buddyIndex são os IDs das trips permitidas (local ou firestoreId)
           try {
