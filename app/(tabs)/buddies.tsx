@@ -31,6 +31,7 @@ import {
   updateBuddyRole,
 } from '@/services/firestoreService';
 import { BuddyOwner, getBuddyOwners } from '@/services/localDb';
+import { pullFromFirestore } from '@/services/syncService';
 
 const ROLES: { value: BuddyRole; label: string; description: string; icon: string }[] = [
   {
@@ -103,7 +104,27 @@ export default function BuddiesScreen() {
     }
   }, [user]);
 
-  useFocusRefresh(loadBuddies);
+  const handleSync = useCallback(async () => {
+    try {
+      setLoading(true);
+      if (!user) return;
+      await pullFromFirestore(user.uid);
+      const [data, tripData, ownerData] = await Promise.all([
+        getBuddies(user.uid),
+        getUserTrips(user.uid),
+        getBuddyOwners(),
+      ]);
+      setBuddies(data);
+      setTrips(tripData);
+      setOwners(ownerData);
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Erro', text2: getFirebaseErrorMessage(err, 'Falha ao sincronizar.') });
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useFocusRefresh(handleSync);
 
   const handleAdd = async () => {
     const trimmedEmail = email.trim().toLowerCase();
@@ -204,7 +225,7 @@ export default function BuddiesScreen() {
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <Text style={styles.headerTitle}>Trip Buddies</Text>
         <View style={styles.headerActions}>
-          <Pressable onPress={loadBuddies} style={styles.iconBtn}>
+          <Pressable onPress={handleSync} style={styles.iconBtn}>
             <Ionicons name="sync-outline" size={24} color="#333" />
           </Pressable>
           <Pressable onPress={handleLogout} style={styles.iconBtn}>
