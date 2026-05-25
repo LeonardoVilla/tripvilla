@@ -12,6 +12,7 @@ import {
     removeSyncEntry,
     updateLocalBuddyFirestoreId,
     upsertBuddyOwner,
+    upsertLocalBuddy,
     upsertLocalDayPlan,
     upsertLocalDayPlanItem,
     upsertLocalPlace,
@@ -22,12 +23,17 @@ import {
 const firestoreDb = getFirestore(firebaseApp);
 
 // Lock para evitar pulls simultâneos (race condition → duplicatas)
-let _pulling = false;
+// Retorna a promise em andamento para que chamadas concorrentes aguardem o mesmo pull
+let _pullingPromise: Promise<void> | null = null;
 
 /** Pull all Firestore data into SQLite (used on first login and manual refresh). */
 export async function pullFromFirestore(uid: string): Promise<void> {
-  if (_pulling) return;
-  _pulling = true;
+  if (_pullingPromise) return _pullingPromise;
+  _pullingPromise = _doPull(uid).finally(() => { _pullingPromise = null; });
+  return _pullingPromise;
+}
+
+async function _doPull(uid: string): Promise<void> {
   try {
     // Own trips + their items
     try {
@@ -42,6 +48,16 @@ export async function pullFromFirestore(uid: string): Promise<void> {
             await upsertLocalTripItem(uid, tripDoc.id, itemDoc.id, itemDoc.data() as Record<string, any>, true, itemDoc.id);
           }
         } catch { /* ignore */ }
+      }
+    } catch { /* offline */ }
+
+    // Own buddies
+    try {
+      const buddiesSnap = await getDocs(collection(firestoreDb, `users/${uid}/buddies`));
+      for (const d of buddiesSnap.docs) {
+        const data = d.data() as Record<string, any>;
+        const tripIds = Array.isArray(data.tripIds) ? data.tripIds : [];
+        await upsertLocalBuddy(uid, d.id, data.email, data.role === 'admin' ? 'admin' : 'user', d.id, tripIds);
       }
     } catch { /* offline */ }
 
@@ -143,9 +159,7 @@ export async function pullFromFirestore(uid: string): Promise<void> {
         }
       } catch { /* buddyIndex not accessible or offline */ }
     }
-  } finally {
-    _pulling = false;
-  }
+  } catch { /* ignore top-level errors */ }
 }
 
 /**
