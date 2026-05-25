@@ -17,12 +17,15 @@ service cloud.firestore {
     }
 
     // ── Viagens ────────────────────────────────────────────────────────────────
-    // Apenas o dono acessa suas viagens e custos fixos
+    // Dono: leitura e escrita
+    // Buddy: somente leitura (para ver as trips compartilhadas no app)
     match /users/{userId}/trips/{tripId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isOwner(userId) || isBuddy(userId);
+      allow write: if isOwner(userId);
 
       match /items/{itemId} {
-        allow read, write: if isOwner(userId);
+        allow read: if isOwner(userId) || isBuddy(userId);
+        allow write: if isOwner(userId);
       }
     }
 
