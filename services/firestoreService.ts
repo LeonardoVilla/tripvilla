@@ -274,7 +274,8 @@ export async function getBuddies(ownerUid: string): Promise<Buddy[]> {
     const snap = await getDocs(collection(firestoreDb, `users/${ownerUid}/buddies`));
     for (const d of snap.docs) {
       const data = d.data() as Record<string, any>;
-      await upsertLocalBuddy(ownerUid, d.id, data.email, data.role, d.id);
+      const tripIds = Array.isArray(data.tripIds) ? data.tripIds : [];
+      await upsertLocalBuddy(ownerUid, d.id, data.email, data.role, d.id, tripIds);
     }
   } catch { /* offline */ }
   return getLocalBuddies(ownerUid);
