@@ -170,26 +170,29 @@ export async function upsertLocalDayPlan(
   const db = await getDb();
 
   if (firestoreId && id === firestoreId) {
-    const existing = await db.getFirstAsync<{ id: string; synced: number }>(
-      'SELECT id, synced FROM day_plans WHERE firestoreId = ?',
+    const existing = await db.getFirstAsync<{ id: string; synced: number; source: string }>(
+      'SELECT id, synced, source FROM day_plans WHERE firestoreId = ?',
       [firestoreId],
     );
     if (existing) {
+      // Preserve 'user' source: own plans must never be downgraded to 'root'.
+      // If incoming _source is 'user', promote the record; otherwise keep existing source.
+      const resolvedSource = data._source === 'user' ? 'user' : (existing.source ?? 'root');
       if (existing.synced === 0) {
         await db.runAsync(
-          `UPDATE day_plans SET firestoreId = ? WHERE id = ?`,
-          [firestoreId, existing.id],
+          `UPDATE day_plans SET firestoreId = ?, source = ? WHERE id = ?`,
+          [firestoreId, resolvedSource, existing.id],
         );
       } else {
         await db.runAsync(
           `UPDATE day_plans SET synced = 1, uid = ?, firestoreId = ?, title = ?, date = ?, notes = ?,
-           itemCount = ?, totalSpent = ?, tripId = ?, ownerUid = ? WHERE id = ?`,
+           itemCount = ?, totalSpent = ?, tripId = ?, ownerUid = ?, source = ? WHERE id = ?`,
           [
             uid, firestoreId,
             data.title ?? null, data.date ?? null, data.notes ?? null,
             data.itemCount ?? 0, data.totalSpent ?? 0,
             data.tripId ?? null, data.ownerUid ?? null,
-            existing.id,
+            resolvedSource, existing.id,
           ],
         );
       }
