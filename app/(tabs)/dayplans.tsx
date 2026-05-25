@@ -22,6 +22,7 @@ import { useAuth } from '@/context/AuthContext';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import { addUserDayPlan, DayPlan, deleteUserDayPlan, getUserDayPlans, getUserPlaces, getUserTrips, Trip, updateUserDayPlan } from '@/services/firestoreService';
 import { useFocusRefresh } from '@/hooks/use-focus-refresh';
+import { Buddy, getLocalBuddies } from '@/services/localDb';
 import { pullFromFirestore } from '@/services/syncService';
 import { formatDate, formatCurrency } from '@/utils/format';
 
@@ -48,6 +49,8 @@ export default function DayPlansScreen() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [hasPlaces, setHasPlaces] = useState(false);
+  const [buddies, setBuddies] = useState<Buddy[]>([]);
+  const [expandedBuddies, setExpandedBuddies] = useState<Set<string>>(new Set());
   const tripsRef = useRef<Trip[]>([]);
 
   // Derive ownerUid from the selected trip (shared trips have ownerUid set)
@@ -78,15 +81,17 @@ export default function DayPlansScreen() {
       setLoading(true);
       if (!user) return;
       await pullFromFirestore(user.uid);
-      const [data, tripData, places] = await Promise.all([
+      const [data, tripData, places, buds] = await Promise.all([
         getUserDayPlans(user.uid),
         getUserTrips(user.uid),
         getUserPlaces(user.uid),
+        getLocalBuddies(user.uid),
       ]);
       setPlans(data);
       tripsRef.current = tripData;
       setTrips(tripData);
       setHasPlaces(places.length > 0);
+      setBuddies(buds);
       if (tripData.length === 1 && !selectedTripId) setSelectedTripId(tripData[0].id);
     } catch (err) {
       Toast.show({ type: 'error', text1: 'Erro', text2: getFirebaseErrorMessage(err, 'Falha ao sincronizar.') });
@@ -104,6 +109,7 @@ export default function DayPlansScreen() {
         if (data.length === 1) setSelectedTripId(data[0].id);
       });
       getUserPlaces(user.uid).then((places) => setHasPlaces(places.length > 0));
+      getLocalBuddies(user.uid).then(setBuddies);
     }
   }, [user]);
 
@@ -243,50 +249,89 @@ export default function DayPlansScreen() {
           renderItem={({ item }) => {
             const trip = trips.find((t) => t.id === item.tripId);
             const isShared = item._source === 'root';
+            const tripBuddies = !isShared && trip
+              ? buddies.filter((b) => b.tripIds.includes(trip.firestoreId ?? '') || b.tripIds.includes(trip.id))
+              : [];
+            const buddiesExpanded = expandedBuddies.has(item.id);
             return (
-            <Pressable style={styles.card} onPress={() => openPlan(item)}>
-              <View style={styles.cardContent}>
-                {(trip || isShared) ? (
-                  <View style={styles.tripBadgeRow}>
-                    {trip && (
-                      <View style={styles.tripBadge}>
-                        <Ionicons name="airplane-outline" size={11} color={TEAL} />
-                        <Text style={styles.tripBadgeText}>{trip.description}</Text>
-                      </View>
-                    )}
-                    {isShared && (
-                      <View style={styles.sharedBadge}>
-                        <Ionicons name="people-outline" size={10} color="#fff" />
-                        <Text style={styles.sharedBadgeText}>Compartilhado</Text>
+            <View style={styles.card}>
+              <Pressable style={{ flexDirection: 'row', alignItems: 'flex-start' }} onPress={() => openPlan(item)}>
+                <View style={styles.cardContent}>
+                  {(trip || isShared) ? (
+                    <View style={styles.tripBadgeRow}>
+                      {trip && (
+                        <View style={styles.tripBadge}>
+                          <Ionicons name="airplane-outline" size={11} color={TEAL} />
+                          <Text style={styles.tripBadgeText}>{trip.description}</Text>
+                        </View>
+                      )}
+                      {isShared && (
+                        <View style={styles.sharedBadge}>
+                          <Ionicons name="people-outline" size={10} color="#fff" />
+                          <Text style={styles.sharedBadgeText}>Compartilhado</Text>
+                        </View>
+                      )}
+                    </View>
+                  ) : null}
+                  <Text style={styles.cardName}>{item.title ?? 'Sem título'}</Text>
+                  <Text style={styles.cardDetail}>📅 {formatDate(item.date)}</Text>
+                  <Text style={styles.cardDetail}>📍 {item.itemCount ?? 0} local(is)</Text>
+                  <Text style={styles.cardDetail}>💰 {formatCurrency(item.totalSpent)}</Text>
+                </View>
+                {!isShared && (
+                  <View style={styles.moreBtn}>
+                    <Pressable onPress={() => setOptionsPlanId(optionsPlanId === item.id ? null : item.id)}>
+                      <Ionicons name="ellipsis-vertical" size={20} color="#666" />
+                    </Pressable>
+                    {optionsPlanId === item.id && (
+                      <View style={styles.optionsMenu}>
+                        <Pressable style={styles.optionsMenuItem} onPress={() => openEditPlanModal(item)}>
+                          <Ionicons name="create-outline" size={16} color="#333" />
+                          <Text style={styles.optionsMenuText}>Editar</Text>
+                        </Pressable>
+                        <Pressable style={styles.optionsMenuItem} onPress={() => handleDeletePlan(item)}>
+                          <Ionicons name="trash-outline" size={16} color="#e53935" />
+                          <Text style={[styles.optionsMenuText, { color: '#e53935' }]}>Excluir</Text>
+                        </Pressable>
                       </View>
                     )}
                   </View>
-                ) : null}
-                <Text style={styles.cardName}>{item.title ?? 'Sem título'}</Text>
-                <Text style={styles.cardDetail}>📅 {formatDate(item.date)}</Text>
-                <Text style={styles.cardDetail}>📍 {item.itemCount ?? 0} local(is)</Text>
-                <Text style={styles.cardDetail}>💰 {formatCurrency(item.totalSpent)}</Text>
-              </View>
+                )}
+              </Pressable>
+
               {!isShared && (
-                <View style={styles.moreBtn}>
-                  <Pressable onPress={() => setOptionsPlanId(optionsPlanId === item.id ? null : item.id)}>
-                    <Ionicons name="ellipsis-vertical" size={20} color="#666" />
-                  </Pressable>
-                  {optionsPlanId === item.id && (
-                    <View style={styles.optionsMenu}>
-                      <Pressable style={styles.optionsMenuItem} onPress={() => openEditPlanModal(item)}>
-                        <Ionicons name="create-outline" size={16} color="#333" />
-                        <Text style={styles.optionsMenuText}>Editar</Text>
-                      </Pressable>
-                      <Pressable style={styles.optionsMenuItem} onPress={() => handleDeletePlan(item)}>
-                        <Ionicons name="trash-outline" size={16} color="#e53935" />
-                        <Text style={[styles.optionsMenuText, { color: '#e53935' }]}>Excluir</Text>
-                      </Pressable>
-                    </View>
+                <Pressable
+                  style={styles.buddiesToggle}
+                  onPress={() => setExpandedBuddies((prev) => {
+                    const next = new Set(prev);
+                    next.has(item.id) ? next.delete(item.id) : next.add(item.id);
+                    return next;
+                  })}
+                >
+                  <Ionicons name="people-outline" size={14} color={TEAL} />
+                  <Text style={styles.buddiesToggleText}>Trip Buddies ({tripBuddies.length})</Text>
+                  <Ionicons name={buddiesExpanded ? 'chevron-up-outline' : 'chevron-down-outline'} size={14} color={TEAL} />
+                </Pressable>
+              )}
+
+              {!isShared && buddiesExpanded && (
+                <View style={styles.buddiesList}>
+                  {tripBuddies.length === 0 ? (
+                    <Text style={styles.buddiesEmpty}>Nenhum buddy nesta viagem.</Text>
+                  ) : (
+                    tripBuddies.map((b) => (
+                      <View key={b.id} style={styles.buddyRow}>
+                        <Ionicons name="person-circle-outline" size={18} color="#888" />
+                        <Text style={styles.buddyEmail}>{b.email}</Text>
+                        <View style={[styles.buddyRoleBadge, b.role === 'admin' ? styles.buddyRoleAdmin : styles.buddyRoleUser]}>
+                          <Text style={styles.buddyRoleText}>{b.role === 'admin' ? 'Planejador' : 'Passageiro'}</Text>
+                        </View>
+                      </View>
+                    ))
                   )}
                 </View>
               )}
-            </Pressable>
+            </View>
             );
           }}
           ListEmptyComponent={(
@@ -446,8 +491,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     marginBottom: 10,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
     ...shadowCard,
   },
   cardContent: { flex: 1 },
@@ -563,4 +606,17 @@ const styles = StyleSheet.create({
   sharedBadgeText: { fontSize: 10, color: '#fff', fontWeight: '700' },
   emptyContainer: { alignItems: 'center', marginTop: 40, gap: 8 },
   emptyHint: { fontSize: 13, color: '#aaa', textAlign: 'center', marginTop: 4, paddingHorizontal: 32 },
+  buddiesToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#eee',
+  },
+  buddiesToggleText: { fontSize: 13, color: TEAL, fontWeight: '600', flex: 1 },
+  buddiesList: { marginTop: 8, gap: 6 },
+  buddiesEmpty: { fontSize: 13, color: '#aaa', fontStyle: 'italic' },
+  buddyRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  buddyEmail: { fontSize: 13, color: '#444', flex: 1 },
+  buddyRoleBadge: { borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 },
+  buddyRoleAdmin: { backgroundColor: '#e8f5e9' },
+  buddyRoleUser: { backgroundColor: '#e3f2fd' },
+  buddyRoleText: { fontSize: 11, fontWeight: '600', color: '#555' },
 });
