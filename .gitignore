@@ -44,3 +44,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# screenshots de testes locais
+*-screenshots/
+argentina-screenshots/
+test-screenshots/
+verify-screenshots/

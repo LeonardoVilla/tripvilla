@@ -89,26 +89,31 @@ export async function pullFromFirestore(uid: string): Promise<void> {
           const ownerData = ownerDoc.data();
           const ownerEmail: string = ownerData.ownerEmail ?? '';
           const role: 'admin' | 'user' = ownerData.role === 'admin' ? 'admin' : 'user';
-          await upsertBuddyOwner(ownerUid, ownerEmail, role);
-          // Pull owner's places
+          const tripIds: string[] = Array.isArray(ownerData.tripIds) ? ownerData.tripIds : [];
+          await upsertBuddyOwner(ownerUid, ownerEmail, role, tripIds);
+
+          // Só puxa dados das viagens às quais o buddy foi adicionado
+          if (tripIds.length === 0) continue;
+
+          // Pull locais filtrados pelo tripId
           try {
             const placesSnap = await getDocs(collection(firestoreDb, `users/${ownerUid}/places`));
             for (const d of placesSnap.docs) {
-              await upsertLocalPlace(
-                uid, d.id,
-                { ...d.data() as Record<string, any>, ownerUid },
-                true, d.id,
-              );
+              const placeData = d.data() as Record<string, any>;
+              if (!tripIds.includes(placeData.tripId)) continue;
+              await upsertLocalPlace(uid, d.id, { ...placeData, ownerUid }, true, d.id);
             }
           } catch { /* no access or offline */ }
 
-          // Pull owner's day plans + items
+          // Pull day plans filtrados pelo tripId + seus items
           try {
             const plansSnap = await getDocs(collection(firestoreDb, `users/${ownerUid}/day_plans`));
             for (const planDoc of plansSnap.docs) {
+              const planData = planDoc.data() as Record<string, any>;
+              if (!tripIds.includes(planData.tripId)) continue;
               await upsertLocalDayPlan(
                 uid, planDoc.id,
-                { ...planDoc.data(), _source: 'root', ownerUid } as Record<string, any>,
+                { ...planData, _source: 'root', ownerUid },
                 true, planDoc.id,
               );
               try {
@@ -150,12 +155,6 @@ export async function pushQueueToFirestore(uid: string): Promise<number> {
   let synced = 0;
 
   for (const entry of sorted) {
-    if (entry.operation !== 'create') {
-      // update/delete not yet implemented — remove stale entry
-      await removeSyncEntry(entry.id);
-      continue;
-    }
-
     try {
       const { _dayPlanLocalId, uid: _uid, ...payload } = entry.payload;
 

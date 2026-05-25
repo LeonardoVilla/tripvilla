@@ -1,32 +1,29 @@
 import { useFocusRefresh } from '@/hooks/use-focus-refresh';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { getAuth, signOut } from 'firebase/auth';
 import React, { useCallback, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 
-import { firebaseApp } from '@/firebaseInit';
+import { BG, shadowCard, shadowFab, shadowMenu, TEAL } from '@/constants/AppTheme';
+import { useAuth } from '@/context/AuthContext';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import { addUserPlace, deleteUserPlace, getUserPlaces, getUserTrips, Trip, updateUserPlace } from '@/services/firestoreService';
 import { BuddyOwner, getBuddyOwners } from '@/services/localDb';
 import { pullFromFirestore } from '@/services/syncService';
-
-const TEAL = '#1f7a6f';
-const BG = '#eaf4f2';
 
 type Place = {
   id: string;
@@ -37,11 +34,13 @@ type Place = {
   closingTime?: string;
   commuteDuration?: string;
   transportSchedule?: string;
+  tripId?: string | null;
 };
 
 export default function PlacesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { user, signOut } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [places, setPlaces] = useState<Place[]>([]);
@@ -59,14 +58,11 @@ export default function PlacesScreen() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
 
-  const getUid = () => getAuth(firebaseApp).currentUser?.uid;
-
   const loadPlaces = async () => {
     try {
       setLoading(true);
-      const uid = getUid();
-      if (!uid) return;
-      const data = (await getUserPlaces(uid)) as Place[];
+      if (!user) return;
+      const data = (await getUserPlaces(user.uid)) as Place[];
       setPlaces(data);
     } catch (err) {
       Toast.show({ type: 'error', text1: 'Erro', text2: getFirebaseErrorMessage(err, 'Falha ao carregar locais.') });
@@ -78,14 +74,13 @@ export default function PlacesScreen() {
   const handleSync = useCallback(async () => {
     try {
       setLoading(true);
-      const uid = getUid();
-      if (!uid) return;
-      await pullFromFirestore(uid);
-      const data = (await getUserPlaces(uid)) as Place[];
+      if (!user) return;
+      await pullFromFirestore(user.uid);
+      const data = (await getUserPlaces(user.uid)) as Place[];
       setPlaces(data);
       const owners = await getBuddyOwners();
       setAdminOwners(owners.filter((o) => o.role === 'admin'));
-      const tripData = await getUserTrips(uid);
+      const tripData = await getUserTrips(user.uid);
       setTrips(tripData);
     } catch (err) {
       Toast.show({
@@ -96,11 +91,11 @@ export default function PlacesScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useFocusRefresh(handleSync);
 
-  const resetForm = () => {
+  const resetForm = (defaultTripId?: string | null) => {
     setEditingPlace(null);
     setName('');
     setLocation('');
@@ -109,7 +104,8 @@ export default function PlacesScreen() {
     setCommuteDuration('30 min');
     setTransportSchedule('');
     setSelectedOwnerUid(null);
-    setSelectedTripId(null);
+    // Auto-seleciona a primeira viagem disponível
+    setSelectedTripId(defaultTripId ?? (trips.length === 1 ? trips[0].id : null));
   };
 
   const openEditModal = (place: Place) => {
@@ -120,41 +116,39 @@ export default function PlacesScreen() {
     setClosingTime(place.closingTime ?? '18:00');
     setCommuteDuration(place.commuteDuration ?? '30 min');
     setTransportSchedule(place.transportSchedule ?? '');
-    setSelectedTripId((place as any).tripId ?? null);
+    setSelectedTripId(place.tripId ?? null);
     setModalVisible(true);
   };
 
   const handleDeletePlace = async (place: Place) => {
     setOptionsPlaceId(null);
-    const uid = getUid();
-    if (!uid) return;
+    if (!user) return;
     try {
-      await deleteUserPlace(uid, place.id, place.firestoreId);
+      await deleteUserPlace(user.uid, place.id, place.firestoreId);
       setPlaces((prev) => prev.filter((p) => p.id !== place.id));
-      Toast.show({ type: 'success', text1: 'Local excluido.' });
+      Toast.show({ type: 'success', text1: 'Local excluído.' });
     } catch (err) {
       Toast.show({
         type: 'error',
         text1: 'Erro ao excluir',
-        text2: getFirebaseErrorMessage(err, 'Nao foi possivel excluir.'),
+        text2: getFirebaseErrorMessage(err, 'Não foi possível excluir.'),
       });
     }
   };
 
   const handleSave = async () => {
     if (!name.trim() || !location.trim()) {
-      Toast.show({ type: 'error', text1: 'Campos obrigatorios', text2: 'Informe nome e localizacao.' });
+      Toast.show({ type: 'error', text1: 'Campos obrigatórios', text2: 'Informe nome e localização.' });
       return;
     }
     if (!selectedTripId) {
-      Toast.show({ type: 'error', text1: 'Selecione uma viagem', text2: 'É necessário vincular o local a uma viagem.' });
+      Toast.show({ type: 'error', text1: 'Viagem obrigatória', text2: 'Selecione a viagem à qual este local pertence.' });
       return;
     }
     try {
       setSaving(true);
-      const uid = getUid();
-      if (!uid) {
-        Toast.show({ type: 'error', text1: 'Sessao expirada', text2: 'Faca login novamente.' });
+      if (!user) {
+        Toast.show({ type: 'error', text1: 'Sessão expirada', text2: 'Faça login novamente.' });
         return;
       }
       const payload = {
@@ -168,10 +162,10 @@ export default function PlacesScreen() {
         updatedAt: new Date().toISOString(),
       };
       if (editingPlace) {
-        await updateUserPlace(uid, editingPlace.id, payload, editingPlace.firestoreId);
+        await updateUserPlace(user.uid, editingPlace.id, payload, editingPlace.firestoreId);
         Toast.show({ type: 'success', text1: 'Local atualizado!' });
       } else {
-        await addUserPlace(uid, { ...payload, visited: false }, selectedOwnerUid ?? undefined);
+        await addUserPlace(user.uid, { ...payload, visited: false }, selectedOwnerUid ?? undefined);
         Toast.show({ type: 'success', text1: 'Local salvo!' });
       }
       resetForm();
@@ -181,7 +175,7 @@ export default function PlacesScreen() {
       Toast.show({
         type: 'error',
         text1: 'Erro ao salvar',
-        text2: getFirebaseErrorMessage(err, 'Nao foi possivel salvar.'),
+        text2: getFirebaseErrorMessage(err, 'Não foi possível salvar.'),
       });
     } finally {
       setSaving(false);
@@ -190,7 +184,7 @@ export default function PlacesScreen() {
 
   const handleLogout = async () => {
     try {
-      await signOut(getAuth(firebaseApp));
+      await signOut();
       router.replace('/auth/login');
     } catch {}
   };
@@ -216,21 +210,29 @@ export default function PlacesScreen() {
           data={places}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
+          renderItem={({ item }) => {
+            const tripName = trips.find((t) => t.id === item.tripId)?.description;
+            return (
             <View style={styles.card}>
               <View style={styles.cardContent}>
+                {tripName ? (
+                  <View style={styles.tripBadge}>
+                    <Ionicons name="airplane-outline" size={11} color={TEAL} />
+                    <Text style={styles.tripBadgeText}>{tripName}</Text>
+                  </View>
+                ) : null}
                 <Text style={styles.cardName}>{item.name ?? 'Sem nome'}</Text>
-                <Text style={styles.cardDetail}>Localizacao: {item.location ?? '-'}</Text>
+                <Text style={styles.cardDetail}>📍 {item.location ?? '-'}</Text>
                 {!!(item.openingTime || item.closingTime) && (
                   <Text style={styles.cardDetail}>
-                    Funcionamento: {item.openingTime} - {item.closingTime}
+                    🕐 {item.openingTime} – {item.closingTime}
                   </Text>
                 )}
                 {!!item.commuteDuration && (
-                  <Text style={styles.cardDetail}>Deslocamento medio: {item.commuteDuration}</Text>
+                  <Text style={styles.cardDetail}>🚌 {item.commuteDuration}</Text>
                 )}
                 {!!item.transportSchedule && (
-                  <Text style={styles.cardDetail}>Transporte: {item.transportSchedule}</Text>
+                  <Text style={styles.cardDetail}>🗺 {item.transportSchedule}</Text>
                 )}
               </View>
               <View style={styles.cardActions}>
@@ -258,25 +260,30 @@ export default function PlacesScreen() {
                 )}
               </View>
             </View>
-          )}
+            );
+          }}
           ListEmptyComponent={
             !loading ? (
               <View style={styles.emptyContainer}>
-                <Text style={styles.empty}>Nenhum local carregado.</Text>
-                <Pressable style={styles.btnLoad} onPress={handleSync}>
-                  <Ionicons name="cloud-download-outline" size={22} color="#fff" />
-                  <Text style={styles.btnLoadText}>Exibir Locais</Text>
-                </Pressable>
+                <Ionicons name="location-outline" size={48} color="#ccc" />
+                <Text style={styles.empty}>Nenhum local cadastrado ainda.</Text>
+                {trips.length === 0 ? (
+                  <Text style={styles.emptyHint}>Cadastre uma viagem primeiro para poder adicionar locais.</Text>
+                ) : (
+                  <Text style={styles.emptyHint}>Toque em "Novo local" para começar.</Text>
+                )}
               </View>
             ) : null
           }
         />
       )}
 
-      <Pressable style={styles.fab} onPress={() => { resetForm(); setModalVisible(true); }}>
-        <Ionicons name="location-outline" size={20} color="#fff" />
-        <Text style={styles.fabText}>Novo local</Text>
-      </Pressable>
+      {trips.length > 0 && (
+        <Pressable style={styles.fab} onPress={() => { resetForm(); setModalVisible(true); }}>
+          <Ionicons name="location-outline" size={20} color="#fff" />
+          <Text style={styles.fabText}>Novo local</Text>
+        </Pressable>
+      )}
 
       <Modal
         visible={modalVisible}
@@ -291,32 +298,21 @@ export default function PlacesScreen() {
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setModalVisible(false)} />
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{editingPlace ? 'Editar local' : 'Novo local'}</Text>
-            {trips.length > 0 && (
-              <>
-                <Text style={styles.label}>Viagem</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                  <Pressable
-                    style={[styles.ownerChip, !selectedTripId && styles.ownerChipSelected]}
-                    onPress={() => setSelectedTripId(null)}
-                  >
-                    <Text style={[styles.ownerChipText, !selectedTripId && styles.ownerChipTextSelected]}>
-                      Sem viagem
-                    </Text>
-                  </Pressable>
-                  {trips.map((t) => (
-                    <Pressable
-                      key={t.id}
-                      style={[styles.ownerChip, selectedTripId === t.id && styles.ownerChipSelected]}
-                      onPress={() => setSelectedTripId(t.id)}
-                    >
-                      <Text style={[styles.ownerChipText, selectedTripId === t.id && styles.ownerChipTextSelected]}>
-                        {t.description || 'Viagem'}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </>
-            )}
+            <Text style={styles.label}>Viagem *</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+              {trips.map((t) => (
+                <Pressable
+                  key={t.id}
+                  style={[styles.ownerChip, selectedTripId === t.id && styles.ownerChipSelected]}
+                  onPress={() => setSelectedTripId(t.id)}
+                >
+                  <Ionicons name="airplane-outline" size={13} color={selectedTripId === t.id ? '#fff' : TEAL} />
+                  <Text style={[styles.ownerChipText, selectedTripId === t.id && styles.ownerChipTextSelected]}>
+                    {t.description || 'Viagem'}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
             {!editingPlace && adminOwners.length > 0 && (
               <>
                 <Text style={styles.label}>Adicionar para</Text>
@@ -351,7 +347,7 @@ export default function PlacesScreen() {
             />
             <TextInput
               style={styles.input}
-              placeholder="Localizacao / Endereco"
+              placeholder="Localização / Endereço"
               value={location}
               onChangeText={setLocation}
             />
@@ -367,10 +363,10 @@ export default function PlacesScreen() {
             </View>
             <Text style={styles.label}>Tempo de deslocamento</Text>
             <TextInput style={styles.input} value={commuteDuration} onChangeText={setCommuteDuration} />
-            <Text style={styles.label}>Horario de transporte</Text>
+            <Text style={styles.label}>Horário de transporte</Text>
             <TextInput
               style={[styles.input, styles.multiline]}
-              placeholder="Onibus 08:30 / 10:00"
+              placeholder="Ônibus 08:30 / 10:00"
               value={transportSchedule}
               onChangeText={setTransportSchedule}
               multiline
@@ -381,7 +377,7 @@ export default function PlacesScreen() {
               disabled={saving}
             >
               <Ionicons name="save-outline" size={18} color="#fff" />
-              <Text style={styles.saveBtnText}>{saving ? 'Salvando...' : editingPlace ? 'Salvar alteracoes' : 'Salvar local'}</Text>
+              <Text style={styles.saveBtnText}>{saving ? 'Salvando...' : editingPlace ? 'Salvar alterações' : 'Salvar local'}</Text>
             </Pressable>
           </View>
         </KeyboardAvoidingView>
@@ -411,10 +407,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    ...shadowCard,
   },
   cardContent: { flex: 1 },
   cardName: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginBottom: 4 },
@@ -428,11 +421,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingVertical: 4,
     minWidth: 120,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
     zIndex: 100,
+    ...shadowMenu,
   },
   optionsMenuItem: {
     flexDirection: 'row',
@@ -466,10 +456,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 18,
     paddingVertical: 12,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
+    ...shadowFab,
   },
   fabText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   overlay: {
@@ -513,14 +500,25 @@ const styles = StyleSheet.create({
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   ownerChip: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: TEAL,
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 7,
     marginRight: 8,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f0faf8',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   ownerChipSelected: { borderColor: TEAL, backgroundColor: TEAL },
-  ownerChipText: { fontSize: 13, color: '#555' },
+  ownerChipText: { fontSize: 13, color: TEAL, fontWeight: '600' },
   ownerChipTextSelected: { color: '#fff', fontWeight: '700' },
+  tripBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  tripBadgeText: { fontSize: 11, color: TEAL, fontWeight: '600', textTransform: 'uppercase' },
+  emptyHint: { fontSize: 13, color: '#aaa', textAlign: 'center', marginTop: 8, paddingHorizontal: 32 },
 });

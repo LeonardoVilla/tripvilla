@@ -1,47 +1,34 @@
-﻿import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { getAuth, signOut } from 'firebase/auth';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 
-import { firebaseApp } from '@/firebaseInit';
+import { BG, shadowCard, shadowFab, shadowMenu, TEAL } from '@/constants/AppTheme';
+import { useAuth } from '@/context/AuthContext';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
-import { addUserDayPlan, DayPlan, deleteUserDayPlan, getUserDayPlans, getUserTrips, Trip, updateUserDayPlan } from '@/services/firestoreService';
+import { addUserDayPlan, DayPlan, deleteUserDayPlan, getUserDayPlans, getUserPlaces, getUserTrips, Trip, updateUserDayPlan } from '@/services/firestoreService';
 import { BuddyOwner, getBuddyOwners } from '@/services/localDb';
 import { pullFromFirestore } from '@/services/syncService';
-
-const TEAL = '#1f7a6f';
-const BG = '#eaf4f2';
-
-function formatDate(dateStr?: string) {
-  if (!dateStr) return '-';
-  const parts = dateStr.split('-');
-  if (parts.length !== 3) return dateStr;
-  return `${parts[2]}/${parts[1]}/${parts[0]}`;
-}
-
-function formatCurrency(value?: number) {
-  const n = value ?? 0;
-  return `R$ ${n.toFixed(2).replace('.', ',')}`;
-}
+import { formatDate, formatCurrency } from '@/utils/format';
 
 export default function DayPlansScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { user, signOut } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [plans, setPlans] = useState<DayPlan[]>([]);
@@ -61,15 +48,13 @@ export default function DayPlansScreen() {
   const [selectedOwnerUid, setSelectedOwnerUid] = useState<string | null>(null);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
-
-  const getUid = () => getAuth(firebaseApp).currentUser?.uid;
+  const [hasPlaces, setHasPlaces] = useState(false);
 
   const loadPlans = async () => {
     try {
       setLoading(true);
-      const uid = getUid();
-      if (!uid) return;
-      const data = await getUserDayPlans(uid);
+      if (!user) return;
+      const data = await getUserDayPlans(user.uid);
       setPlans(data);
     } catch (err) {
       Toast.show({
@@ -82,45 +67,57 @@ export default function DayPlansScreen() {
     }
   };
 
-  const handleSync = async () => {
+  const handleSync = useCallback(async () => {
     try {
       setLoading(true);
-      const uid = getUid();
-      if (!uid) return;
-      await pullFromFirestore(uid);
-      const data = await getUserDayPlans(uid);
+      if (!user) return;
+      await pullFromFirestore(user.uid);
+      const [data, owners, tripData, places] = await Promise.all([
+        getUserDayPlans(user.uid),
+        getBuddyOwners(),
+        getUserTrips(user.uid),
+        getUserPlaces(user.uid),
+      ]);
       setPlans(data);
-      const owners = await getBuddyOwners();
       setAdminOwners(owners.filter((o) => o.role === 'admin'));
-      const tripData = await getUserTrips(uid);
       setTrips(tripData);
+      setHasPlaces(places.length > 0);
+      if (tripData.length === 1 && !selectedTripId) setSelectedTripId(tripData[0].id);
     } catch (err) {
       Toast.show({ type: 'error', text1: 'Erro', text2: getFirebaseErrorMessage(err, 'Falha ao sincronizar.') });
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     loadPlans();
-    const uid = getUid();
     getBuddyOwners().then((owners) => setAdminOwners(owners.filter((o) => o.role === 'admin')));
-    if (uid) getUserTrips(uid).then(setTrips);
-  }, []);
+    if (user) {
+      getUserTrips(user.uid).then((data) => {
+        setTrips(data);
+        if (data.length === 1) setSelectedTripId(data[0].id);
+      });
+      getUserPlaces(user.uid).then((places) => setHasPlaces(places.length > 0));
+    }
+  }, [user]);
 
   const handleCreate = async () => {
     if (!title.trim()) {
-      Toast.show({ type: 'error', text1: 'Titulo obrigatorio', text2: 'Informe o titulo do role.' });
+      Toast.show({ type: 'error', text1: 'Título obrigatório', text2: 'Informe o título do role.' });
+      return;
+    }
+    if (!selectedTripId) {
+      Toast.show({ type: 'error', text1: 'Viagem obrigatória', text2: 'Selecione a viagem deste role.' });
       return;
     }
     try {
       setSaving(true);
-      const uid = getUid();
-      if (!uid) {
-        Toast.show({ type: 'error', text1: 'Sessao expirada' });
+      if (!user) {
+        Toast.show({ type: 'error', text1: 'Sessão expirada' });
         return;
       }
-      await addUserDayPlan(uid, {
+      await addUserDayPlan(user.uid, {
         title: title.trim(),
         date,
         notes: notes.trim(),
@@ -141,7 +138,7 @@ export default function DayPlansScreen() {
       Toast.show({
         type: 'error',
         text1: 'Erro ao criar',
-        text2: getFirebaseErrorMessage(err, 'Nao foi possivel criar o role.'),
+        text2: getFirebaseErrorMessage(err, 'Não foi possível criar o role.'),
       });
     } finally {
       setSaving(false);
@@ -150,7 +147,7 @@ export default function DayPlansScreen() {
 
   const handleLogout = async () => {
     try {
-      await signOut(getAuth(firebaseApp));
+      await signOut();
       router.replace('/auth/login');
     } catch {}
   };
@@ -173,14 +170,13 @@ export default function DayPlansScreen() {
 
   const handleUpdatePlan = async () => {
     if (!editTitle.trim()) {
-      Toast.show({ type: 'error', text1: 'Titulo obrigatorio' });
+      Toast.show({ type: 'error', text1: 'Título obrigatório' });
       return;
     }
     try {
       setSaving(true);
-      const uid = getUid();
-      if (!uid || !editingPlan) return;
-      await updateUserDayPlan(uid, editingPlan.id, {
+      if (!user || !editingPlan) return;
+      await updateUserDayPlan(user.uid, editingPlan.id, {
         title: editTitle.trim(),
         date: editDate,
         notes: editNotes.trim(),
@@ -193,7 +189,7 @@ export default function DayPlansScreen() {
       Toast.show({
         type: 'error',
         text1: 'Erro ao atualizar',
-        text2: getFirebaseErrorMessage(err, 'Nao foi possivel atualizar.'),
+        text2: getFirebaseErrorMessage(err, 'Não foi possível atualizar.'),
       });
     } finally {
       setSaving(false);
@@ -202,17 +198,16 @@ export default function DayPlansScreen() {
 
   const handleDeletePlan = async (plan: DayPlan) => {
     setOptionsPlanId(null);
-    const uid = getUid();
-    if (!uid) return;
+    if (!user) return;
     try {
-      await deleteUserDayPlan(uid, plan.id, plan.firestoreId);
+      await deleteUserDayPlan(user.uid, plan.id, plan.firestoreId);
       setPlans((prev) => prev.filter((p) => p.id !== plan.id));
-      Toast.show({ type: 'success', text1: 'Role excluido.' });
+      Toast.show({ type: 'success', text1: 'Role excluído.' });
     } catch (err) {
       Toast.show({
         type: 'error',
         text1: 'Erro ao excluir',
-        text2: getFirebaseErrorMessage(err, 'Nao foi possivel excluir.'),
+        text2: getFirebaseErrorMessage(err, 'Não foi possível excluir.'),
       });
     }
   };
@@ -238,13 +233,21 @@ export default function DayPlansScreen() {
           data={plans}
           keyExtractor={(item) => `${item._source}-${item.id}`}
           contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
+          renderItem={({ item }) => {
+            const tripName = trips.find((t) => t.id === item.tripId)?.description;
+            return (
             <Pressable style={styles.card} onPress={() => openPlan(item)}>
               <View style={styles.cardContent}>
-                <Text style={styles.cardName}>{item.title ?? 'Sem titulo'}</Text>
-                <Text style={styles.cardDetail}>Data: {formatDate(item.date)}</Text>
-                <Text style={styles.cardDetail}>Locais escolhidos: {item.itemCount ?? 0}</Text>
-                <Text style={styles.cardDetail}>Gasto do dia: {formatCurrency(item.totalSpent)}</Text>
+                {tripName ? (
+                  <View style={styles.tripBadge}>
+                    <Ionicons name="airplane-outline" size={11} color={TEAL} />
+                    <Text style={styles.tripBadgeText}>{tripName}</Text>
+                  </View>
+                ) : null}
+                <Text style={styles.cardName}>{item.title ?? 'Sem título'}</Text>
+                <Text style={styles.cardDetail}>📅 {formatDate(item.date)}</Text>
+                <Text style={styles.cardDetail}>📍 {item.itemCount ?? 0} local(is)</Text>
+                <Text style={styles.cardDetail}>💰 {formatCurrency(item.totalSpent)}</Text>
               </View>
               <View style={styles.moreBtn}>
                 <Pressable onPress={() => setOptionsPlanId(optionsPlanId === item.id ? null : item.id)}>
@@ -264,15 +267,30 @@ export default function DayPlansScreen() {
                 )}
               </View>
             </Pressable>
+            );
+          }}
+          ListEmptyComponent={(
+            <View style={styles.emptyContainer}>
+              <Ionicons name="calendar-outline" size={48} color="#ccc" />
+              <Text style={styles.empty}>Nenhum role cadastrado ainda.</Text>
+              {trips.length === 0 ? (
+                <Text style={styles.emptyHint}>Cadastre uma viagem primeiro.</Text>
+              ) : !hasPlaces ? (
+                <Text style={styles.emptyHint}>Cadastre ao menos um local antes de criar roles.</Text>
+              ) : (
+                <Text style={styles.emptyHint}>Toque em "Novo role" para começar.</Text>
+              )}
+            </View>
           )}
-          ListEmptyComponent={<Text style={styles.empty}>Nenhum role cadastrado ainda.</Text>}
         />
       )}
 
-      <Pressable style={styles.fab} onPress={() => setModalVisible(true)}>
-        <Ionicons name="options-outline" size={20} color="#fff" />
-        <Text style={styles.fabText}>Novo role</Text>
-      </Pressable>
+      {trips.length > 0 && hasPlaces && (
+        <Pressable style={styles.fab} onPress={() => setModalVisible(true)}>
+          <Ionicons name="options-outline" size={20} color="#fff" />
+          <Text style={styles.fabText}>Novo role</Text>
+        </Pressable>
+      )}
 
       <Modal
         visible={modalVisible}
@@ -287,32 +305,21 @@ export default function DayPlansScreen() {
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setModalVisible(false)} />
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Novo role do dia</Text>
-            {trips.length > 0 && (
-              <>
-                <Text style={styles.ownerLabel}>Viagem</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                  <Pressable
-                    style={[styles.ownerChip, !selectedTripId && styles.ownerChipSelected]}
-                    onPress={() => setSelectedTripId(null)}
-                  >
-                    <Text style={[styles.ownerChipText, !selectedTripId && styles.ownerChipTextSelected]}>
-                      Sem viagem
-                    </Text>
-                  </Pressable>
-                  {trips.map((t) => (
-                    <Pressable
-                      key={t.id}
-                      style={[styles.ownerChip, selectedTripId === t.id && styles.ownerChipSelected]}
-                      onPress={() => setSelectedTripId(t.id)}
-                    >
-                      <Text style={[styles.ownerChipText, selectedTripId === t.id && styles.ownerChipTextSelected]}>
-                        {t.description || 'Viagem'}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </>
-            )}
+            <Text style={styles.ownerLabel}>Viagem *</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+              {trips.map((t) => (
+                <Pressable
+                  key={t.id}
+                  style={[styles.ownerChip, selectedTripId === t.id && styles.ownerChipSelected]}
+                  onPress={() => setSelectedTripId(t.id)}
+                >
+                  <Ionicons name="airplane-outline" size={13} color={selectedTripId === t.id ? '#fff' : TEAL} />
+                  <Text style={[styles.ownerChipText, selectedTripId === t.id && styles.ownerChipTextSelected]}>
+                    {t.description || 'Viagem'}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
             {adminOwners.length > 0 && (
               <>
                 <Text style={styles.ownerLabel}>Criar para</Text>
@@ -341,7 +348,7 @@ export default function DayPlansScreen() {
             )}
             <TextInput
               style={styles.input}
-              placeholder="Titulo do role"
+              placeholder="Título do role"
               value={title}
               onChangeText={setTitle}
             />
@@ -351,7 +358,7 @@ export default function DayPlansScreen() {
             </Pressable>
             <TextInput
               style={[styles.input, styles.multiline]}
-              placeholder="Observacoes do dia"
+              placeholder="Observações do dia"
               value={notes}
               onChangeText={setNotes}
               multiline
@@ -381,28 +388,22 @@ export default function DayPlansScreen() {
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditModalVisible(false)} />
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Editar role</Text>
-            {trips.length > 0 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+            <Text style={styles.ownerLabel}>Viagem *</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+              {trips.map((t) => (
                 <Pressable
-                  style={[styles.ownerChip, !editTripId && styles.ownerChipSelected]}
-                  onPress={() => setEditTripId(null)}
+                  key={t.id}
+                  style={[styles.ownerChip, editTripId === t.id && styles.ownerChipSelected]}
+                  onPress={() => setEditTripId(t.id)}
                 >
-                  <Text style={[styles.ownerChipText, !editTripId && styles.ownerChipTextSelected]}>Sem viagem</Text>
+                  <Ionicons name="airplane-outline" size={13} color={editTripId === t.id ? '#fff' : TEAL} />
+                  <Text style={[styles.ownerChipText, editTripId === t.id && styles.ownerChipTextSelected]}>{t.description}</Text>
                 </Pressable>
-                {trips.map((t) => (
-                  <Pressable
-                    key={t.id}
-                    style={[styles.ownerChip, editTripId === t.id && styles.ownerChipSelected]}
-                    onPress={() => setEditTripId(t.id)}
-                  >
-                    <Text style={[styles.ownerChipText, editTripId === t.id && styles.ownerChipTextSelected]}>{t.title}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            )}
+              ))}
+            </ScrollView>
             <TextInput
               style={styles.input}
-              placeholder="Titulo do role"
+              placeholder="Título do role"
               value={editTitle}
               onChangeText={setEditTitle}
             />
@@ -412,7 +413,7 @@ export default function DayPlansScreen() {
             </Pressable>
             <TextInput
               style={[styles.input, styles.multiline]}
-              placeholder="Observacoes do dia"
+              placeholder="Observações do dia"
               value={editNotes}
               onChangeText={setEditNotes}
               multiline
@@ -423,7 +424,7 @@ export default function DayPlansScreen() {
               disabled={saving}
             >
               <Ionicons name="save-outline" size={18} color="#fff" />
-              <Text style={styles.saveBtnText}>{saving ? 'Salvando...' : 'Salvar alteracoes'}</Text>
+              <Text style={styles.saveBtnText}>{saving ? 'Salvando...' : 'Salvar alterações'}</Text>
             </Pressable>
           </View>
         </KeyboardAvoidingView>
@@ -453,10 +454,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    ...shadowCard,
   },
   cardContent: { flex: 1 },
   cardName: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginBottom: 4 },
@@ -470,11 +468,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingVertical: 4,
     minWidth: 120,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
     zIndex: 100,
+    ...shadowMenu,
   },
   optionsMenuItem: {
     flexDirection: 'row',
@@ -496,10 +491,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 18,
     paddingVertical: 12,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
+    ...shadowFab,
   },
   fabText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   overlay: {
@@ -554,14 +546,21 @@ const styles = StyleSheet.create({
   ownerLabel: { fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 4 },
   ownerChip: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: TEAL,
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 7,
     marginRight: 8,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f0faf8',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   ownerChipSelected: { borderColor: TEAL, backgroundColor: TEAL },
-  ownerChipText: { fontSize: 13, color: '#555' },
+  ownerChipText: { fontSize: 13, color: TEAL, fontWeight: '600' },
   ownerChipTextSelected: { color: '#fff', fontWeight: '700' },
+  tripBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
+  tripBadgeText: { fontSize: 11, color: TEAL, fontWeight: '600', textTransform: 'uppercase' },
+  emptyContainer: { alignItems: 'center', marginTop: 40, gap: 8 },
+  emptyHint: { fontSize: 13, color: '#aaa', textAlign: 'center', marginTop: 4, paddingHorizontal: 32 },
 });

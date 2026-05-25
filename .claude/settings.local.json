@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx expo *)",
+      "Bash(Start-Sleep -Seconds 8)",
+      "Bash(Get-Content \"C:\\\\Users\\\\Villa\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--repositorio-tripvilla\\\\5c2b2f84-34d9-42db-94a5-eab63c87fbe8\\\\tasks\\\\bflyq4yva.output\" -Tail 30)"
+    ]
+  }
+}
