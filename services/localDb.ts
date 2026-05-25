@@ -148,7 +148,16 @@ export async function getLocalDayPlans(uid: string) {
     createdAt: r.createdAt as string | undefined,
     _source: (r.source ?? 'user') as 'user' | 'root',
     _synced: Boolean(r.synced),
+    participants: r.participants ? JSON.parse(r.participants as string) as string[] : undefined,
   }));
+}
+
+export async function updateDayPlanParticipants(planId: string, participants: string[]): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `UPDATE day_plans SET participants = ? WHERE id = ?`,
+    [JSON.stringify(participants), planId],
+  );
 }
 
 export async function upsertLocalDayPlan(

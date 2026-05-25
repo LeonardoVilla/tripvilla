@@ -57,6 +57,7 @@ export type DayPlan = {
   createdAt?: string;
   itemCount?: number;
   totalSpent?: number;
+  participants?: string[];
   _source: DayPlanSource;
 };
 
