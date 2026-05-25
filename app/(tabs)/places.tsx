@@ -1,7 +1,7 @@
 import { useFocusRefresh } from '@/hooks/use-focus-refresh';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -22,7 +22,6 @@ import { BG, shadowCard, shadowFab, shadowMenu, TEAL } from '@/constants/AppThem
 import { useAuth } from '@/context/AuthContext';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import { addUserPlace, deleteUserPlace, getUserPlaces, getUserTrips, Trip, updateUserPlace } from '@/services/firestoreService';
-import { BuddyOwner, getBuddyOwners } from '@/services/localDb';
 import { pullFromFirestore } from '@/services/syncService';
 
 type Place = {
@@ -53,10 +52,15 @@ export default function PlacesScreen() {
   const [closingTime, setClosingTime] = useState('18:00');
   const [commuteDuration, setCommuteDuration] = useState('30 min');
   const [transportSchedule, setTransportSchedule] = useState('');
-  const [adminOwners, setAdminOwners] = useState<BuddyOwner[]>([]);
   const [selectedOwnerUid, setSelectedOwnerUid] = useState<string | null>(null);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+
+  // Derive ownerUid automatically from the selected trip (shared trips have ownerUid set)
+  useEffect(() => {
+    const trip = trips.find((t) => t.id === selectedTripId);
+    setSelectedOwnerUid(trip?.ownerUid ?? null);
+  }, [selectedTripId, trips]);
 
   const loadPlaces = async () => {
     try {
@@ -76,11 +80,11 @@ export default function PlacesScreen() {
       setLoading(true);
       if (!user) return;
       await pullFromFirestore(user.uid);
-      const data = (await getUserPlaces(user.uid)) as Place[];
+      const [data, tripData] = await Promise.all([
+        getUserPlaces(user.uid) as Promise<Place[]>,
+        getUserTrips(user.uid),
+      ]);
       setPlaces(data);
-      const owners = await getBuddyOwners();
-      setAdminOwners(owners.filter((o) => o.role === 'admin'));
-      const tripData = await getUserTrips(user.uid);
       setTrips(tripData);
     } catch (err) {
       Toast.show({
@@ -103,9 +107,8 @@ export default function PlacesScreen() {
     setClosingTime('18:00');
     setCommuteDuration('30 min');
     setTransportSchedule('');
-    setSelectedOwnerUid(null);
-    // Auto-seleciona a primeira viagem disponível
     setSelectedTripId(defaultTripId ?? (trips.length === 1 ? trips[0].id : null));
+    // selectedOwnerUid is derived from the trip via useEffect
   };
 
   const openEditModal = (place: Place) => {
@@ -211,14 +214,23 @@ export default function PlacesScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
-            const tripName = trips.find((t) => t.id === item.tripId)?.description;
+            const trip = trips.find((t) => t.id === item.tripId);
+            const isShared = !!(item as any).ownerUid;
             return (
             <View style={styles.card}>
               <View style={styles.cardContent}>
-                {tripName ? (
-                  <View style={styles.tripBadge}>
-                    <Ionicons name="airplane-outline" size={11} color={TEAL} />
-                    <Text style={styles.tripBadgeText}>{tripName}</Text>
+                {trip ? (
+                  <View style={styles.tripBadgeRow}>
+                    <View style={styles.tripBadge}>
+                      <Ionicons name="airplane-outline" size={11} color={TEAL} />
+                      <Text style={styles.tripBadgeText}>{trip.description}</Text>
+                    </View>
+                    {isShared && (
+                      <View style={styles.sharedBadge}>
+                        <Ionicons name="people-outline" size={10} color="#fff" />
+                        <Text style={styles.sharedBadgeText}>Compartilhado</Text>
+                      </View>
+                    )}
                   </View>
                 ) : null}
                 <Text style={styles.cardName}>{item.name ?? 'Sem nome'}</Text>
@@ -313,32 +325,6 @@ export default function PlacesScreen() {
                 </Pressable>
               ))}
             </ScrollView>
-            {!editingPlace && adminOwners.length > 0 && (
-              <>
-                <Text style={styles.label}>Adicionar para</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                  <Pressable
-                    style={[styles.ownerChip, !selectedOwnerUid && styles.ownerChipSelected]}
-                    onPress={() => setSelectedOwnerUid(null)}
-                  >
-                    <Text style={[styles.ownerChipText, !selectedOwnerUid && styles.ownerChipTextSelected]}>
-                      Minha conta
-                    </Text>
-                  </Pressable>
-                  {adminOwners.map((o) => (
-                    <Pressable
-                      key={o.ownerUid}
-                      style={[styles.ownerChip, selectedOwnerUid === o.ownerUid && styles.ownerChipSelected]}
-                      onPress={() => setSelectedOwnerUid(o.ownerUid)}
-                    >
-                      <Text style={[styles.ownerChipText, selectedOwnerUid === o.ownerUid && styles.ownerChipTextSelected]}>
-                        {o.ownerEmail || 'Parceiro'}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </>
-            )}
             <TextInput
               style={styles.input}
               placeholder="Nome do local"
@@ -513,12 +499,13 @@ const styles = StyleSheet.create({
   ownerChipSelected: { borderColor: TEAL, backgroundColor: TEAL },
   ownerChipText: { fontSize: 13, color: TEAL, fontWeight: '600' },
   ownerChipTextSelected: { color: '#fff', fontWeight: '700' },
-  tripBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 4,
-  },
+  tripBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  tripBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   tripBadgeText: { fontSize: 11, color: TEAL, fontWeight: '600', textTransform: 'uppercase' },
+  sharedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: TEAL, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2,
+  },
+  sharedBadgeText: { fontSize: 10, color: '#fff', fontWeight: '700' },
   emptyHint: { fontSize: 13, color: '#aaa', textAlign: 'center', marginTop: 8, paddingHorizontal: 32 },
 });

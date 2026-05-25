@@ -3,7 +3,12 @@
     "allow": [
       "Bash(npx expo *)",
       "Bash(Start-Sleep -Seconds 8)",
-      "Bash(Get-Content \"C:\\\\Users\\\\Villa\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--repositorio-tripvilla\\\\5c2b2f84-34d9-42db-94a5-eab63c87fbe8\\\\tasks\\\\bflyq4yva.output\" -Tail 30)"
+      "Bash(Get-Content \"C:\\\\Users\\\\Villa\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--repositorio-tripvilla\\\\5c2b2f84-34d9-42db-94a5-eab63c87fbe8\\\\tasks\\\\bflyq4yva.output\" -Tail 30)",
+      "Bash(Get-ChildItem -Path \"c:\\\\repos\\\\tripvilla\" -Recurse -Directory -Exclude node_modules)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Get-ChildItem -Path c:\\\\repos\\\\tripvilla -Recurse -Depth 2)",
+      "Bash(Select-Object FullName)",
+      "Bash(xargs grep -l \"syncAll\\\\|pullFromFirestore\\\\|pushQueueToFirestore\")"
     ]
   }
 }

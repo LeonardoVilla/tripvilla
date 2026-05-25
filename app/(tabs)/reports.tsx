@@ -207,9 +207,18 @@ export default function ReportsScreen() {
                     const total = fixed + variable;
                     const remaining = (trip.maxCost ?? 0) - total;
                     const pct = (trip.maxCost ?? 0) > 0 ? Math.min((total / trip.maxCost!) * 100, 100) : 0;
+                    const isShared = !!trip.ownerUid;
                     return (
                       <View key={trip.id} style={styles.tripSummaryCard}>
-                        <Text style={styles.tripSummaryTitle}>{trip.description ?? 'Viagem'}</Text>
+                        <View style={styles.tripSummaryHeader}>
+                          <Text style={[styles.tripSummaryTitle, { flex: 1 }]}>{trip.description ?? 'Viagem'}</Text>
+                          {isShared && (
+                            <View style={styles.sharedBadge}>
+                              <Ionicons name="people-outline" size={10} color="#fff" />
+                              <Text style={styles.sharedBadgeText}>Compartilhada</Text>
+                            </View>
+                          )}
+                        </View>
                         {(trip.city || trip.country) ? (
                           <Text style={styles.tripSummaryDest}>
                             {[trip.city, trip.state, trip.country].filter(Boolean).join(', ')}
@@ -420,7 +429,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10,
     ...shadowCard,
   },
-  tripSummaryTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', marginBottom: 2 },
+  tripSummaryHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
+  tripSummaryTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
+  sharedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: TEAL, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2,
+  },
+  sharedBadgeText: { fontSize: 10, color: '#fff', fontWeight: '700' },
   tripSummaryDest: { fontSize: 12, color: '#888', marginBottom: 8 },
   tripBudgetRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   tripBudgetCol: { alignItems: 'center', flex: 1 },

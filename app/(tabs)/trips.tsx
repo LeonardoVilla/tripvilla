@@ -147,7 +147,9 @@ export default function TripsScreen() {
     } catch {}
   };
 
-  const renderTrip = ({ item }: { item: Trip }) => (
+  const renderTrip = ({ item }: { item: Trip }) => {
+    const isShared = !!item.ownerUid;
+    return (
     <Pressable
       style={styles.card}
       onPress={() =>
@@ -156,13 +158,23 @@ export default function TripsScreen() {
           params: { id: item.id, title: item.description ?? 'Viagem', maxCost: String(item.maxCost ?? 0) },
         })
       }
-      onLongPress={() => setOptionsTripId(item.id)}
+      onLongPress={() => !isShared && setOptionsTripId(item.id)}
     >
       <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>{item.description ?? '(sem título)'}</Text>
-        <Pressable onPress={() => setOptionsTripId(item.id)} style={styles.moreBtn}>
-          <Ionicons name="ellipsis-vertical" size={20} color="#555" />
-        </Pressable>
+        <View style={{ flex: 1 }}>
+          {isShared && (
+            <View style={styles.sharedBadge}>
+              <Ionicons name="people-outline" size={11} color="#fff" />
+              <Text style={styles.sharedBadgeText}>Compartilhada</Text>
+            </View>
+          )}
+          <Text style={styles.cardTitle}>{item.description ?? '(sem título)'}</Text>
+        </View>
+        {!isShared && (
+          <Pressable onPress={() => setOptionsTripId(item.id)} style={styles.moreBtn}>
+            <Ionicons name="ellipsis-vertical" size={20} color="#555" />
+          </Pressable>
+        )}
       </View>
       {(item.country || item.city) ? (
         <Text style={styles.cardSub}>
@@ -171,7 +183,7 @@ export default function TripsScreen() {
       ) : null}
       <Text style={styles.cardBudget}>Orçamento: {formatCurrency(item.maxCost)}</Text>
 
-      {optionsTripId === item.id && (
+      {!isShared && optionsTripId === item.id && (
         <View style={styles.optionsRow}>
           <Pressable style={styles.optionBtn} onPress={() => { setOptionsTripId(null); openEditModal(item); }}>
             <Ionicons name="create-outline" size={18} color={TEAL} />
@@ -188,7 +200,8 @@ export default function TripsScreen() {
         </View>
       )}
     </Pressable>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -310,6 +323,11 @@ const styles = StyleSheet.create({
   moreBtn: { padding: 4 },
   cardSub: { fontSize: 13, color: '#666', marginTop: 2 },
   cardBudget: { fontSize: 13, color: TEAL, fontWeight: '600', marginTop: 4 },
+  sharedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3, alignSelf: 'flex-start',
+    backgroundColor: TEAL, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2, marginBottom: 4,
+  },
+  sharedBadgeText: { fontSize: 10, color: '#fff', fontWeight: '700' },
   optionsRow: { flexDirection: 'row', gap: 12, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#eee' },
   optionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   optionText: { fontSize: 14, color: TEAL },

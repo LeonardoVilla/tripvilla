@@ -6,6 +6,7 @@ import {
     getFirestoreId,
     getPlanFirestoreId,
     getSyncQueue,
+    incrementSyncRetry,
     markSynced,
     removeSyncEntry,
     upsertBuddyOwner,
@@ -95,6 +96,15 @@ export async function pullFromFirestore(uid: string): Promise<void> {
           // Só puxa dados das viagens às quais o buddy foi adicionado
           if (tripIds.length === 0) continue;
 
+          // Pull trips compartilhadas com este buddy
+          try {
+            const ownerTripsSnap = await getDocs(collection(firestoreDb, `users/${ownerUid}/trips`));
+            for (const tripDoc of ownerTripsSnap.docs) {
+              if (!tripIds.includes(tripDoc.id)) continue;
+              await upsertLocalTrip(uid, tripDoc.id, tripDoc.data() as Record<string, any>, true, tripDoc.id, ownerUid);
+            }
+          } catch { /* no access or offline */ }
+
           // Pull locais filtrados pelo tripId
           try {
             const placesSnap = await getDocs(collection(firestoreDb, `users/${ownerUid}/places`));
@@ -146,15 +156,47 @@ export async function pushQueueToFirestore(uid: string): Promise<number> {
   const queue = await getSyncQueue();
   if (queue.length === 0) return 0;
 
+  const MAX_RETRIES = 5;
+
+  // Deduplicate: for the same (entity, localId), keep only the last update/create.
+  // Deletes are always kept.
+  const deduped = (() => {
+    const seen = new Map<string, typeof queue[number]>();
+    for (const entry of queue) {
+      if (entry.operation === 'delete') continue; // handled separately below
+      const key = `${entry.entity}:${entry.localId}`;
+      const existing = seen.get(key);
+      if (!existing || entry.createdAt > existing.createdAt) {
+        seen.set(key, entry);
+      }
+    }
+    const deletes = queue.filter((e) => e.operation === 'delete');
+    return [...seen.values(), ...deletes];
+  })();
+
+  // Remove queue entries that were collapsed by deduplication
+  const dedupedIds = new Set(deduped.map((e) => e.id));
+  for (const entry of queue) {
+    if (!dedupedIds.has(entry.id)) {
+      await removeSyncEntry(entry.id);
+    }
+  }
+
   // Process in dependency order: places → day_plans → day_plan_items
   const ORDER: Record<string, number> = { place: 0, day_plan: 1, day_plan_item: 2 };
-  const sorted = [...queue].sort(
+  const sorted = [...deduped].sort(
     (a, b) => (ORDER[a.entity] ?? 3) - (ORDER[b.entity] ?? 3),
   );
 
   let synced = 0;
 
   for (const entry of sorted) {
+    if (entry.retryCount >= MAX_RETRIES) {
+      // Dead-letter: too many failures, remove to prevent infinite growth
+      console.warn('[SyncService] Dropping entry after max retries', entry.id, entry.entity, entry.localId);
+      await removeSyncEntry(entry.id);
+      continue;
+    }
     try {
       const { _dayPlanLocalId, uid: _uid, ...payload } = entry.payload;
 
@@ -227,8 +269,8 @@ export async function pushQueueToFirestore(uid: string): Promise<number> {
       await removeSyncEntry(entry.id);
       synced++;
     } catch (err) {
-      // Network error — leave in queue for next attempt
       console.warn('[SyncService] Failed to sync entry', entry.id, err);
+      await incrementSyncRetry(entry.id);
     }
   }
 
