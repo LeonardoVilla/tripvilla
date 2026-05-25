@@ -22,6 +22,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useFocusRefresh } from '@/hooks/use-focus-refresh';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import { addUserTrip, deleteUserTrip, getUserTrips, Trip, updateUserTrip } from '@/services/firestoreService';
+import { Buddy, getLocalBuddies } from '@/services/localDb';
 import { pullFromFirestore, pushQueueToFirestore } from '@/services/syncService';
 import { formatCurrency } from '@/utils/format';
 
@@ -35,6 +36,8 @@ export default function TripsScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
   const [optionsTripId, setOptionsTripId] = useState<string | null>(null);
+  const [buddies, setBuddies] = useState<Buddy[]>([]);
+  const [expandedBuddies, setExpandedBuddies] = useState<Set<string>>(new Set());
 
   const [description, setDescription] = useState('');
   const [country, setCountry] = useState('');
@@ -46,8 +49,9 @@ export default function TripsScreen() {
     try {
       setLoading(true);
       if (!user) return;
-      const data = await getUserTrips(user.uid);
+      const [data, buds] = await Promise.all([getUserTrips(user.uid), getLocalBuddies(user.uid)]);
       setTrips(data);
+      setBuddies(buds);
     } catch (err) {
       Toast.show({ type: 'error', text1: 'Erro', text2: getFirebaseErrorMessage(err, 'Falha ao carregar viagens.') });
     } finally {
@@ -61,8 +65,9 @@ export default function TripsScreen() {
       if (!user) return;
       await pushQueueToFirestore(user.uid);
       await pullFromFirestore(user.uid);
-      const data = await getUserTrips(user.uid);
+      const [data, buds] = await Promise.all([getUserTrips(user.uid), getLocalBuddies(user.uid)]);
       setTrips(data);
+      setBuddies(buds);
     } catch (err) {
       Toast.show({ type: 'error', text1: 'Erro', text2: getFirebaseErrorMessage(err, 'Falha ao sincronizar.') });
     } finally {
@@ -147,59 +152,100 @@ export default function TripsScreen() {
     } catch {}
   };
 
+  const toggleBuddies = (tripId: string) => {
+    setExpandedBuddies((prev) => {
+      const next = new Set(prev);
+      next.has(tripId) ? next.delete(tripId) : next.add(tripId);
+      return next;
+    });
+  };
+
   const renderTrip = ({ item }: { item: Trip }) => {
     const isShared = !!item.ownerUid;
+    const tripBuddies = buddies.filter(
+      (b) => b.tripIds.includes(item.firestoreId ?? '') || b.tripIds.includes(item.id),
+    );
+    const buddiesExpanded = expandedBuddies.has(item.id);
     return (
-    <Pressable
-      style={styles.card}
-      onPress={() =>
-        router.push({
-          pathname: '/trip/[id]',
-          params: { id: item.id, title: item.description ?? 'Viagem', maxCost: String(item.maxCost ?? 0) },
-        })
-      }
-      onLongPress={() => !isShared && setOptionsTripId(item.id)}
-    >
-      <View style={styles.cardHeader}>
-        <View style={{ flex: 1 }}>
-          {isShared && (
-            <View style={styles.sharedBadge}>
-              <Ionicons name="people-outline" size={11} color="#fff" />
-              <Text style={styles.sharedBadgeText}>Compartilhada</Text>
-            </View>
+    <View style={styles.card}>
+      <Pressable
+        onPress={() =>
+          router.push({
+            pathname: '/trip/[id]',
+            params: { id: item.id, title: item.description ?? 'Viagem', maxCost: String(item.maxCost ?? 0) },
+          })
+        }
+        onLongPress={() => !isShared && setOptionsTripId(item.id)}
+      >
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            {isShared && (
+              <View style={styles.sharedBadge}>
+                <Ionicons name="people-outline" size={11} color="#fff" />
+                <Text style={styles.sharedBadgeText}>Compartilhada</Text>
+              </View>
+            )}
+            <Text style={styles.cardTitle}>{item.description ?? '(sem título)'}</Text>
+          </View>
+          {!isShared && (
+            <Pressable onPress={() => setOptionsTripId(item.id)} style={styles.moreBtn}>
+              <Ionicons name="ellipsis-vertical" size={20} color="#555" />
+            </Pressable>
           )}
-          <Text style={styles.cardTitle}>{item.description ?? '(sem título)'}</Text>
         </View>
-        {!isShared && (
-          <Pressable onPress={() => setOptionsTripId(item.id)} style={styles.moreBtn}>
-            <Ionicons name="ellipsis-vertical" size={20} color="#555" />
-          </Pressable>
-        )}
-      </View>
-      {(item.country || item.city) ? (
-        <Text style={styles.cardSub}>
-          {[item.city, item.state, item.country].filter(Boolean).join(', ')}
-        </Text>
-      ) : null}
-      <Text style={styles.cardBudget}>Orçamento: {formatCurrency(item.maxCost)}</Text>
+        {(item.country || item.city) ? (
+          <Text style={styles.cardSub}>
+            {[item.city, item.state, item.country].filter(Boolean).join(', ')}
+          </Text>
+        ) : null}
+        <Text style={styles.cardBudget}>Orçamento: {formatCurrency(item.maxCost)}</Text>
 
-      {!isShared && optionsTripId === item.id && (
-        <View style={styles.optionsRow}>
-          <Pressable style={styles.optionBtn} onPress={() => { setOptionsTripId(null); openEditModal(item); }}>
-            <Ionicons name="create-outline" size={18} color={TEAL} />
-            <Text style={styles.optionText}>Editar</Text>
-          </Pressable>
-          <Pressable style={styles.optionBtn} onPress={() => handleDelete(item)}>
-            <Ionicons name="trash-outline" size={18} color="#c0392b" />
-            <Text style={[styles.optionText, { color: '#c0392b' }]}>Excluir</Text>
-          </Pressable>
-          <Pressable style={styles.optionBtn} onPress={() => setOptionsTripId(null)}>
-            <Ionicons name="close-outline" size={18} color="#555" />
-            <Text style={styles.optionText}>Cancelar</Text>
-          </Pressable>
+        {!isShared && optionsTripId === item.id && (
+          <View style={styles.optionsRow}>
+            <Pressable style={styles.optionBtn} onPress={() => { setOptionsTripId(null); openEditModal(item); }}>
+              <Ionicons name="create-outline" size={18} color={TEAL} />
+              <Text style={styles.optionText}>Editar</Text>
+            </Pressable>
+            <Pressable style={styles.optionBtn} onPress={() => handleDelete(item)}>
+              <Ionicons name="trash-outline" size={18} color="#c0392b" />
+              <Text style={[styles.optionText, { color: '#c0392b' }]}>Excluir</Text>
+            </Pressable>
+            <Pressable style={styles.optionBtn} onPress={() => setOptionsTripId(null)}>
+              <Ionicons name="close-outline" size={18} color="#555" />
+              <Text style={styles.optionText}>Cancelar</Text>
+            </Pressable>
+          </View>
+        )}
+      </Pressable>
+
+      {!isShared && (
+        <Pressable style={styles.buddiesToggle} onPress={() => toggleBuddies(item.id)}>
+          <Ionicons name="people-outline" size={14} color={TEAL} />
+          <Text style={styles.buddiesToggleText}>
+            Trip Buddies ({tripBuddies.length})
+          </Text>
+          <Ionicons name={buddiesExpanded ? 'chevron-up-outline' : 'chevron-down-outline'} size={14} color={TEAL} />
+        </Pressable>
+      )}
+
+      {!isShared && buddiesExpanded && (
+        <View style={styles.buddiesList}>
+          {tripBuddies.length === 0 ? (
+            <Text style={styles.buddiesEmpty}>Nenhum buddy nesta viagem.</Text>
+          ) : (
+            tripBuddies.map((b) => (
+              <View key={b.id} style={styles.buddyRow}>
+                <Ionicons name="person-circle-outline" size={18} color="#888" />
+                <Text style={styles.buddyEmail}>{b.email}</Text>
+                <View style={[styles.buddyRoleBadge, b.role === 'admin' ? styles.buddyRoleAdmin : styles.buddyRoleUser]}>
+                  <Text style={styles.buddyRoleText}>{b.role === 'admin' ? 'Planejador' : 'Passageiro'}</Text>
+                </View>
+              </View>
+            ))
+          )}
         </View>
       )}
-    </Pressable>
+    </View>
     );
   };
 
@@ -331,6 +377,19 @@ const styles = StyleSheet.create({
   optionsRow: { flexDirection: 'row', gap: 12, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#eee' },
   optionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   optionText: { fontSize: 14, color: TEAL },
+  buddiesToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#eee',
+  },
+  buddiesToggleText: { fontSize: 13, color: TEAL, fontWeight: '600', flex: 1 },
+  buddiesList: { marginTop: 8, gap: 6 },
+  buddiesEmpty: { fontSize: 13, color: '#aaa', fontStyle: 'italic' },
+  buddyRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  buddyEmail: { fontSize: 13, color: '#444', flex: 1 },
+  buddyRoleBadge: { borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 },
+  buddyRoleAdmin: { backgroundColor: '#e8f5e9' },
+  buddyRoleUser: { backgroundColor: '#e3f2fd' },
+  buddyRoleText: { fontSize: 11, fontWeight: '600', color: '#555' },
   empty: { textAlign: 'center', color: '#888', marginTop: 60, lineHeight: 24 },
   fab: {
     position: 'absolute', right: 20, backgroundColor: TEAL,
