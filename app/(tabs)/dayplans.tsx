@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -21,7 +21,6 @@ import { BG, shadowCard, shadowFab, shadowMenu, TEAL } from '@/constants/AppThem
 import { useAuth } from '@/context/AuthContext';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import { addUserDayPlan, DayPlan, deleteUserDayPlan, getUserDayPlans, getUserPlaces, getUserTrips, Trip, updateUserDayPlan } from '@/services/firestoreService';
-import { BuddyOwner, getBuddyOwners } from '@/services/localDb';
 import { pullFromFirestore } from '@/services/syncService';
 import { formatDate, formatCurrency } from '@/utils/format';
 
@@ -44,11 +43,17 @@ export default function DayPlansScreen() {
   const [editDate, setEditDate] = useState('');
   const [editNotes, setEditNotes] = useState('');
   const [editTripId, setEditTripId] = useState<string | null>(null);
-  const [adminOwners, setAdminOwners] = useState<BuddyOwner[]>([]);
   const [selectedOwnerUid, setSelectedOwnerUid] = useState<string | null>(null);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [hasPlaces, setHasPlaces] = useState(false);
+  const tripsRef = useRef<Trip[]>([]);
+
+  // Derive ownerUid from the selected trip (shared trips have ownerUid set)
+  useEffect(() => {
+    const trip = tripsRef.current.find((t) => t.id === selectedTripId);
+    setSelectedOwnerUid(trip?.ownerUid ?? null);
+  }, [selectedTripId]);
 
   const loadPlans = async () => {
     try {
@@ -72,14 +77,13 @@ export default function DayPlansScreen() {
       setLoading(true);
       if (!user) return;
       await pullFromFirestore(user.uid);
-      const [data, owners, tripData, places] = await Promise.all([
+      const [data, tripData, places] = await Promise.all([
         getUserDayPlans(user.uid),
-        getBuddyOwners(),
         getUserTrips(user.uid),
         getUserPlaces(user.uid),
       ]);
       setPlans(data);
-      setAdminOwners(owners.filter((o) => o.role === 'admin'));
+      tripsRef.current = tripData;
       setTrips(tripData);
       setHasPlaces(places.length > 0);
       if (tripData.length === 1 && !selectedTripId) setSelectedTripId(tripData[0].id);
@@ -92,9 +96,9 @@ export default function DayPlansScreen() {
 
   useEffect(() => {
     loadPlans();
-    getBuddyOwners().then((owners) => setAdminOwners(owners.filter((o) => o.role === 'admin')));
     if (user) {
       getUserTrips(user.uid).then((data) => {
+        tripsRef.current = data;
         setTrips(data);
         if (data.length === 1) setSelectedTripId(data[0].id);
       });
@@ -234,14 +238,25 @@ export default function DayPlansScreen() {
           keyExtractor={(item) => `${item._source}-${item.id}`}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
-            const tripName = trips.find((t) => t.id === item.tripId)?.description;
+            const trip = trips.find((t) => t.id === item.tripId);
+            const isShared = item._source === 'root';
             return (
             <Pressable style={styles.card} onPress={() => openPlan(item)}>
               <View style={styles.cardContent}>
-                {tripName ? (
-                  <View style={styles.tripBadge}>
-                    <Ionicons name="airplane-outline" size={11} color={TEAL} />
-                    <Text style={styles.tripBadgeText}>{tripName}</Text>
+                {(trip || isShared) ? (
+                  <View style={styles.tripBadgeRow}>
+                    {trip && (
+                      <View style={styles.tripBadge}>
+                        <Ionicons name="airplane-outline" size={11} color={TEAL} />
+                        <Text style={styles.tripBadgeText}>{trip.description}</Text>
+                      </View>
+                    )}
+                    {isShared && (
+                      <View style={styles.sharedBadge}>
+                        <Ionicons name="people-outline" size={10} color="#fff" />
+                        <Text style={styles.sharedBadgeText}>Compartilhado</Text>
+                      </View>
+                    )}
                   </View>
                 ) : null}
                 <Text style={styles.cardName}>{item.title ?? 'Sem título'}</Text>
@@ -249,23 +264,25 @@ export default function DayPlansScreen() {
                 <Text style={styles.cardDetail}>📍 {item.itemCount ?? 0} local(is)</Text>
                 <Text style={styles.cardDetail}>💰 {formatCurrency(item.totalSpent)}</Text>
               </View>
-              <View style={styles.moreBtn}>
-                <Pressable onPress={() => setOptionsPlanId(optionsPlanId === item.id ? null : item.id)}>
-                  <Ionicons name="ellipsis-vertical" size={20} color="#666" />
-                </Pressable>
-                {optionsPlanId === item.id && (
-                  <View style={styles.optionsMenu}>
-                    <Pressable style={styles.optionsMenuItem} onPress={() => openEditPlanModal(item)}>
-                      <Ionicons name="create-outline" size={16} color="#333" />
-                      <Text style={styles.optionsMenuText}>Editar</Text>
-                    </Pressable>
-                    <Pressable style={styles.optionsMenuItem} onPress={() => handleDeletePlan(item)}>
-                      <Ionicons name="trash-outline" size={16} color="#e53935" />
-                      <Text style={[styles.optionsMenuText, { color: '#e53935' }]}>Excluir</Text>
-                    </Pressable>
-                  </View>
-                )}
-              </View>
+              {!isShared && (
+                <View style={styles.moreBtn}>
+                  <Pressable onPress={() => setOptionsPlanId(optionsPlanId === item.id ? null : item.id)}>
+                    <Ionicons name="ellipsis-vertical" size={20} color="#666" />
+                  </Pressable>
+                  {optionsPlanId === item.id && (
+                    <View style={styles.optionsMenu}>
+                      <Pressable style={styles.optionsMenuItem} onPress={() => openEditPlanModal(item)}>
+                        <Ionicons name="create-outline" size={16} color="#333" />
+                        <Text style={styles.optionsMenuText}>Editar</Text>
+                      </Pressable>
+                      <Pressable style={styles.optionsMenuItem} onPress={() => handleDeletePlan(item)}>
+                        <Ionicons name="trash-outline" size={16} color="#e53935" />
+                        <Text style={[styles.optionsMenuText, { color: '#e53935' }]}>Excluir</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+              )}
             </Pressable>
             );
           }}
@@ -320,32 +337,6 @@ export default function DayPlansScreen() {
                 </Pressable>
               ))}
             </ScrollView>
-            {adminOwners.length > 0 && (
-              <>
-                <Text style={styles.ownerLabel}>Criar para</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                  <Pressable
-                    style={[styles.ownerChip, !selectedOwnerUid && styles.ownerChipSelected]}
-                    onPress={() => setSelectedOwnerUid(null)}
-                  >
-                    <Text style={[styles.ownerChipText, !selectedOwnerUid && styles.ownerChipTextSelected]}>
-                      Minha conta
-                    </Text>
-                  </Pressable>
-                  {adminOwners.map((o) => (
-                    <Pressable
-                      key={o.ownerUid}
-                      style={[styles.ownerChip, selectedOwnerUid === o.ownerUid && styles.ownerChipSelected]}
-                      onPress={() => setSelectedOwnerUid(o.ownerUid)}
-                    >
-                      <Text style={[styles.ownerChipText, selectedOwnerUid === o.ownerUid && styles.ownerChipTextSelected]}>
-                        {o.ownerEmail || 'Parceiro'}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </>
-            )}
             <TextInput
               style={styles.input}
               placeholder="Título do role"
@@ -559,8 +550,14 @@ const styles = StyleSheet.create({
   ownerChipSelected: { borderColor: TEAL, backgroundColor: TEAL },
   ownerChipText: { fontSize: 13, color: TEAL, fontWeight: '600' },
   ownerChipTextSelected: { color: '#fff', fontWeight: '700' },
-  tripBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
+  tripBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  tripBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   tripBadgeText: { fontSize: 11, color: TEAL, fontWeight: '600', textTransform: 'uppercase' },
+  sharedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: TEAL, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2,
+  },
+  sharedBadgeText: { fontSize: 10, color: '#fff', fontWeight: '700' },
   emptyContainer: { alignItems: 'center', marginTop: 40, gap: 8 },
   emptyHint: { fontSize: 13, color: '#aaa', textAlign: 'center', marginTop: 4, paddingHorizontal: 32 },
 });

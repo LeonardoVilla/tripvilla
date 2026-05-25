@@ -67,7 +67,8 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
           entity TEXT NOT NULL,
           localId TEXT NOT NULL,
           payload TEXT NOT NULL,
-          createdAt TEXT NOT NULL
+          createdAt TEXT NOT NULL,
+          retryCount INTEGER DEFAULT 0
         );
       `);
 
@@ -181,6 +182,12 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
           AND entity = 'day_plan_item'
           AND localId IN (SELECT id FROM day_plan_items WHERE synced = 1 AND firestoreId IS NOT NULL);
       `);
+
+      // Migration: add retryCount to existing pending_sync rows
+      await db.execAsync(`ALTER TABLE pending_sync ADD COLUMN retryCount INTEGER DEFAULT 0`).catch(() => {});
+
+      // Migration: add ownerUid to trips for buddy-shared trips
+      await db.execAsync(`ALTER TABLE trips ADD COLUMN ownerUid TEXT`).catch(() => {});
 
       return db;
     })();

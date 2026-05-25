@@ -37,19 +37,36 @@ export async function upsertLocalPlace(
 ) {
   const db = await getDb();
 
-  // Se estamos sincronizando do Firestore (id === firestoreId),
-  // verificar se já existe registro local com esse firestoreId para evitar duplicata.
   if (firestoreId && id === firestoreId) {
-    const existing = await db.getFirstAsync<{ id: string }>(
-      'SELECT id FROM places WHERE firestoreId = ?',
+    const existing = await db.getFirstAsync<{ id: string; synced: number }>(
+      'SELECT id, synced FROM places WHERE firestoreId = ?',
       [firestoreId],
     );
     if (existing) {
-      // Já existe registro local vinculado a esse doc do Firestore — apenas atualiza
-      await db.runAsync(
-        `UPDATE places SET synced = 1, firestoreId = ?, uid = ?, ownerUid = ? WHERE id = ?`,
-        [firestoreId, uid, data.ownerUid ?? null, existing.id], // tripId not updated on Firestore sync
-      );
+      if (existing.synced === 0) {
+        // Local has pending changes — only update sync metadata, preserve data
+        await db.runAsync(
+          `UPDATE places SET firestoreId = ?, uid = ?, ownerUid = ? WHERE id = ?`,
+          [firestoreId, uid, data.ownerUid ?? null, existing.id],
+        );
+      } else {
+        // Local is clean — update all fields with remote data
+        await db.runAsync(
+          `UPDATE places SET synced = 1, firestoreId = ?, uid = ?, ownerUid = ?,
+           name = ?, location = ?, openTime = ?, closeTime = ?, travelTime = ?, transport = ?, tripId = ?
+           WHERE id = ?`,
+          [
+            firestoreId, uid, data.ownerUid ?? null,
+            data.name ?? null, data.location ?? null,
+            data.openingTime ?? data.openTime ?? null,
+            data.closingTime ?? data.closeTime ?? null,
+            data.commuteDuration ?? data.travelTime ?? null,
+            data.transportSchedule ?? data.transport ?? null,
+            data.tripId ?? null,
+            existing.id,
+          ],
+        );
+      }
       return;
     }
   }
@@ -144,15 +161,29 @@ export async function upsertLocalDayPlan(
   const db = await getDb();
 
   if (firestoreId && id === firestoreId) {
-    const existing = await db.getFirstAsync<{ id: string }>(
-      'SELECT id FROM day_plans WHERE firestoreId = ?',
+    const existing = await db.getFirstAsync<{ id: string; synced: number }>(
+      'SELECT id, synced FROM day_plans WHERE firestoreId = ?',
       [firestoreId],
     );
     if (existing) {
-      await db.runAsync(
-        `UPDATE day_plans SET synced = 1, firestoreId = ? WHERE id = ?`,
-        [firestoreId, existing.id],
-      );
+      if (existing.synced === 0) {
+        await db.runAsync(
+          `UPDATE day_plans SET firestoreId = ? WHERE id = ?`,
+          [firestoreId, existing.id],
+        );
+      } else {
+        await db.runAsync(
+          `UPDATE day_plans SET synced = 1, firestoreId = ?, title = ?, date = ?, notes = ?,
+           itemCount = ?, totalSpent = ?, tripId = ?, ownerUid = ? WHERE id = ?`,
+          [
+            firestoreId,
+            data.title ?? null, data.date ?? null, data.notes ?? null,
+            data.itemCount ?? 0, data.totalSpent ?? 0,
+            data.tripId ?? null, data.ownerUid ?? null,
+            existing.id,
+          ],
+        );
+      }
       return;
     }
   }
@@ -246,15 +277,31 @@ export async function upsertLocalDayPlanItem(
   const db = await getDb();
 
   if (firestoreId && id === firestoreId) {
-    const existing = await db.getFirstAsync<{ id: string }>(
-      'SELECT id FROM day_plan_items WHERE firestoreId = ?',
+    const existing = await db.getFirstAsync<{ id: string; synced: number }>(
+      'SELECT id, synced FROM day_plan_items WHERE firestoreId = ?',
       [firestoreId],
     );
     if (existing) {
-      await db.runAsync(
-        `UPDATE day_plan_items SET synced = 1, firestoreId = ? WHERE id = ?`,
-        [firestoreId, existing.id],
-      );
+      if (existing.synced === 0) {
+        await db.runAsync(
+          `UPDATE day_plan_items SET firestoreId = ? WHERE id = ?`,
+          [firestoreId, existing.id],
+        );
+      } else {
+        await db.runAsync(
+          `UPDATE day_plan_items SET synced = 1, firestoreId = ?,
+           arrivalTime = ?, leaveTime = ?, amountSpent = ?, notes = ?,
+           placeName = ?, placeLocation = ?, ownerUid = ? WHERE id = ?`,
+          [
+            firestoreId,
+            data.arrivalTime ?? null, data.leaveTime ?? null,
+            data.amountSpent ?? 0, data.notes ?? null,
+            data.placeName ?? null, data.placeLocation ?? null,
+            data.ownerUid ?? null,
+            existing.id,
+          ],
+        );
+      }
       return;
     }
   }
@@ -376,12 +423,25 @@ export async function getSyncQueue(): Promise<Array<{
   localId: string;
   payload: Record<string, any>;
   createdAt: string;
+  retryCount: number;
 }>> {
   const db = await getDb();
   const rows = await db.getAllAsync<Record<string, any>>(
     'SELECT * FROM pending_sync ORDER BY createdAt ASC',
   );
-  return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload as string) })) as any;
+  return rows.map((r) => ({
+    ...r,
+    payload: JSON.parse(r.payload as string),
+    retryCount: (r.retryCount as number) ?? 0,
+  })) as any;
+}
+
+export async function incrementSyncRetry(id: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'UPDATE pending_sync SET retryCount = retryCount + 1 WHERE id = ?',
+    [id],
+  );
 }
 
 export async function removeSyncEntry(id: string) {
@@ -515,6 +575,7 @@ export type Trip = {
   id: string;
   firestoreId?: string | null;
   uid: string;
+  ownerUid?: string | null;
   description?: string;
   country?: string;
   state?: string;
@@ -534,6 +595,7 @@ export async function getLocalTrips(uid: string): Promise<Trip[]> {
     id: r.id as string,
     firestoreId: r.firestoreId as string | null | undefined,
     uid: r.uid as string,
+    ownerUid: r.ownerUid as string | null | undefined,
     description: r.description as string | undefined,
     country: r.country as string | undefined,
     state: r.state as string | undefined,
@@ -550,27 +612,43 @@ export async function upsertLocalTrip(
   data: Record<string, any>,
   synced: boolean,
   firestoreId: string | null,
+  ownerUid?: string | null,
 ): Promise<void> {
   const db = await getDb();
 
   if (firestoreId && id === firestoreId) {
-    const existing = await db.getFirstAsync<{ id: string }>(
-      'SELECT id FROM trips WHERE firestoreId = ?',
-      [firestoreId],
+    const existing = await db.getFirstAsync<{ id: string; synced: number }>(
+      'SELECT id, synced FROM trips WHERE firestoreId = ? AND uid = ?',
+      [firestoreId, uid],
     );
     if (existing) {
-      await db.runAsync(
-        `UPDATE trips SET synced = 1, firestoreId = ? WHERE id = ?`,
-        [firestoreId, existing.id],
-      );
+      if (existing.synced === 0) {
+        await db.runAsync(
+          `UPDATE trips SET firestoreId = ?, ownerUid = ? WHERE id = ?`,
+          [firestoreId, ownerUid ?? data.ownerUid ?? null, existing.id],
+        );
+      } else {
+        await db.runAsync(
+          `UPDATE trips SET synced = 1, firestoreId = ?,
+           description = ?, country = ?, state = ?, city = ?, maxCost = ?, ownerUid = ? WHERE id = ?`,
+          [
+            firestoreId,
+            data.description ?? null, data.country ?? null,
+            data.state ?? null, data.city ?? null,
+            data.maxCost ?? 0,
+            ownerUid ?? data.ownerUid ?? null,
+            existing.id,
+          ],
+        );
+      }
       return;
     }
   }
 
   await db.runAsync(
     `INSERT OR REPLACE INTO trips
-     (id, uid, description, country, state, city, maxCost, createdAt, synced, firestoreId)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, uid, description, country, state, city, maxCost, createdAt, synced, firestoreId, ownerUid)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, uid,
       data.description ?? null,
@@ -581,6 +659,7 @@ export async function upsertLocalTrip(
       data.createdAt ?? new Date().toISOString(),
       synced ? 1 : 0,
       firestoreId,
+      ownerUid ?? data.ownerUid ?? null,
     ],
   );
 }
@@ -643,15 +722,27 @@ export async function upsertLocalTripItem(
   const db = await getDb();
 
   if (firestoreId && id === firestoreId) {
-    const existing = await db.getFirstAsync<{ id: string }>(
-      'SELECT id FROM trip_items WHERE firestoreId = ?',
+    const existing = await db.getFirstAsync<{ id: string; synced: number }>(
+      'SELECT id, synced FROM trip_items WHERE firestoreId = ?',
       [firestoreId],
     );
     if (existing) {
-      await db.runAsync(
-        `UPDATE trip_items SET synced = 1, firestoreId = ? WHERE id = ?`,
-        [firestoreId, existing.id],
-      );
+      if (existing.synced === 0) {
+        await db.runAsync(
+          `UPDATE trip_items SET firestoreId = ? WHERE id = ?`,
+          [firestoreId, existing.id],
+        );
+      } else {
+        await db.runAsync(
+          `UPDATE trip_items SET synced = 1, firestoreId = ?,
+           type = ?, description = ?, amount = ? WHERE id = ?`,
+          [
+            firestoreId,
+            data.type ?? null, data.description ?? null, data.amount ?? 0,
+            existing.id,
+          ],
+        );
+      }
       return;
     }
   }
