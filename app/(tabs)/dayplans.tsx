@@ -21,6 +21,7 @@ import { BG, shadowCard, shadowFab, shadowMenu, TEAL } from '@/constants/AppThem
 import { useAuth } from '@/context/AuthContext';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import { addUserDayPlan, DayPlan, deleteUserDayPlan, getUserDayPlans, getUserPlaces, getUserTrips, Trip, updateUserDayPlan } from '@/services/firestoreService';
+import { useFocusRefresh } from '@/hooks/use-focus-refresh';
 import { pullFromFirestore } from '@/services/syncService';
 import { formatDate, formatCurrency } from '@/utils/format';
 
@@ -105,6 +106,8 @@ export default function DayPlansScreen() {
       getUserPlaces(user.uid).then((places) => setHasPlaces(places.length > 0));
     }
   }, [user]);
+
+  useFocusRefresh(handleSync);
 
   const handleCreate = async () => {
     if (!title.trim()) {

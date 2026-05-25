@@ -22,6 +22,7 @@ import { DayPlan, DayPlanItem, getDayPlanItems, getUserDayPlans, getUserTrips, T
 import { getTripFixedTotal, getTripVariableTotal } from '@/services/localDb';
 import { pullFromFirestore } from '@/services/syncService';
 import { formatCurrency, formatDate } from '@/utils/format';
+import { useFocusRefresh } from '@/hooks/use-focus-refresh';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -103,6 +104,8 @@ export default function ReportsScreen() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useFocusRefresh(handleSync);
 
   const toggleExpand = async (plan: DayPlan) => {
     if (!user) return;
