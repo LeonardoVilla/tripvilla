@@ -30,6 +30,7 @@ import {
   Trip,
   updateBuddyRole,
 } from '@/services/firestoreService';
+import { BuddyOwner, getBuddyOwners } from '@/services/localDb';
 
 const ROLES: { value: BuddyRole; label: string; description: string; icon: string }[] = [
   {
@@ -77,17 +78,20 @@ export default function BuddiesScreen() {
   const [optionsBuddyId, setOptionsBuddyId] = useState<string | null>(null);
   const [editTripsBuddy, setEditTripsBuddy] = useState<Buddy | null>(null);
   const [editTripIds, setEditTripIds] = useState<string[]>([]);
+  const [owners, setOwners] = useState<BuddyOwner[]>([]);
 
   const loadBuddies = useCallback(async () => {
     try {
       setLoading(true);
       if (!user) return;
-      const [data, tripData] = await Promise.all([
+      const [data, tripData, ownerData] = await Promise.all([
         getBuddies(user.uid),
         getUserTrips(user.uid),
+        getBuddyOwners(),
       ]);
       setBuddies(data);
       setTrips(tripData);
+      setOwners(ownerData);
     } catch (err) {
       Toast.show({
         type: 'error',
@@ -293,13 +297,51 @@ export default function BuddiesScreen() {
               )}
             </View>
           )}
+          ListFooterComponent={
+            owners.length > 0 ? (
+              <View style={styles.ownersSection}>
+                <View style={styles.ownersSectionHeader}>
+                  <Ionicons name="mail-outline" size={16} color={TEAL} />
+                  <Text style={styles.ownersSectionTitle}>Você é convidado(a) de:</Text>
+                </View>
+                {owners.map((o) => (
+                  <View key={o.ownerUid} style={styles.ownerCard}>
+                    <View style={styles.ownerAvatar}>
+                      <Ionicons name="person-outline" size={20} color={TEAL} />
+                    </View>
+                    <View style={styles.ownerInfo}>
+                      <Text style={styles.ownerEmail}>{o.ownerEmail}</Text>
+                      <View style={[styles.badge, o.role === 'admin' ? styles.badgeAdmin : styles.badgeUser]}>
+                        <Ionicons
+                          name={o.role === 'admin' ? 'briefcase-outline' : 'eye-outline'}
+                          size={11}
+                          color={o.role === 'admin' ? '#1f7a6f' : '#7c3aed'}
+                        />
+                        <Text style={[styles.badgeText, o.role === 'admin' ? styles.badgeTextAdmin : styles.badgeTextUser]}>
+                          {o.role === 'admin' ? 'Travel Planner' : 'Ride-along'}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : null
+          }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Ionicons name="people-outline" size={52} color="#ccc" />
-              <Text style={styles.emptyText}>Nenhum trip buddy ainda.</Text>
+              <Text style={styles.emptyText}>Você não tem trip buddy ainda.</Text>
               <Text style={styles.emptySubtext}>
                 Adicione pessoas para compartilhar sua trip.
               </Text>
+              {owners.length > 0 && (
+                <View style={styles.emptyOwnersHint}>
+                  <Ionicons name="information-circle-outline" size={16} color={TEAL} />
+                  <Text style={styles.emptyOwnersHintText}>
+                    Mas você é convidado(a) de {owners.length} pessoa{owners.length > 1 ? 's' : ''}.
+                  </Text>
+                </View>
+              )}
             </View>
           }
         />
@@ -631,4 +673,49 @@ const styles = StyleSheet.create({
   tripChipText: { fontSize: 13, color: TEAL, fontWeight: '600' },
   tripChipTextActive: { color: '#fff' },
   noTripsHint: { fontSize: 13, color: '#aaa', fontStyle: 'italic', marginTop: 4 },
+  ownersSection: {
+    marginTop: 24,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e0eeec',
+  },
+  ownersSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+  },
+  ownersSectionTitle: { fontSize: 14, fontWeight: '700', color: '#555' },
+  ownerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#e0eeec',
+  },
+  ownerAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#eaf4f2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ownerInfo: { flex: 1, gap: 4 },
+  ownerEmail: { fontSize: 14, fontWeight: '600', color: '#1a1a1a' },
+  emptyOwnersHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 16,
+    backgroundColor: '#eaf4f2',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  emptyOwnersHintText: { fontSize: 13, color: TEAL, fontWeight: '600', flex: 1 },
 });
