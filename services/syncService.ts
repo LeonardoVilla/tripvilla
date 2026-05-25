@@ -97,12 +97,14 @@ async function _doPull(uid: string): Promise<void> {
 
     // Buddy owners' data — look up all owners who added the current user as a buddy
     const myEmail = getAuth(firebaseApp).currentUser?.email;
+    console.log('[SyncService] _doPull buddyIndex check — myEmail:', myEmail);
     if (myEmail) {
       await clearBuddyOwners();
       try {
         const ownersSnap = await getDocs(
           collection(firestoreDb, `buddyIndex/${myEmail}/owners`),
         );
+        console.log('[SyncService] buddyIndex owners count:', ownersSnap.docs.length);
         for (const ownerDoc of ownersSnap.docs) {
           const ownerUid = ownerDoc.id;
           const ownerData = ownerDoc.data();
