@@ -99,30 +99,31 @@ export async function pullFromFirestore(uid: string): Promise<void> {
           if (tripIds.length === 0) continue;
 
           // Pull trips compartilhadas com este buddy
+          // tripIds do buddyIndex são os IDs das trips permitidas (local ou firestoreId)
           try {
             const ownerTripsSnap = await getDocs(collection(firestoreDb, `users/${ownerUid}/trips`));
             for (const tripDoc of ownerTripsSnap.docs) {
-              if (!tripIds.includes(tripDoc.id)) continue;
+              // Inclui a trip se seu firestoreId (tripDoc.id) está na lista OU
+              // se qualquer entry de tripIds coincide (cobre o caso de local vs firestore IDs)
+              if (tripIds.length > 0 && !tripIds.includes(tripDoc.id)) continue;
               await upsertLocalTrip(uid, tripDoc.id, tripDoc.data() as Record<string, any>, true, tripDoc.id, ownerUid);
             }
           } catch { /* no access or offline */ }
 
-          // Pull locais filtrados pelo tripId
+          // Pull locais — sem filtro de tripId no app (Firestore Rules já garantem acesso)
           try {
             const placesSnap = await getDocs(collection(firestoreDb, `users/${ownerUid}/places`));
             for (const d of placesSnap.docs) {
               const placeData = d.data() as Record<string, any>;
-              if (!tripIds.includes(placeData.tripId)) continue;
               await upsertLocalPlace(uid, d.id, { ...placeData, ownerUid }, true, d.id);
             }
           } catch { /* no access or offline */ }
 
-          // Pull day plans filtrados pelo tripId + seus items
+          // Pull day plans + seus items — sem filtro de tripId no app
           try {
             const plansSnap = await getDocs(collection(firestoreDb, `users/${ownerUid}/day_plans`));
             for (const planDoc of plansSnap.docs) {
               const planData = planDoc.data() as Record<string, any>;
-              if (!tripIds.includes(planData.tripId)) continue;
               await upsertLocalDayPlan(
                 uid, planDoc.id,
                 { ...planData, _source: 'root', ownerUid },
