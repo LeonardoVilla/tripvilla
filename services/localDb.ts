@@ -173,10 +173,10 @@ export async function upsertLocalDayPlan(
         );
       } else {
         await db.runAsync(
-          `UPDATE day_plans SET synced = 1, firestoreId = ?, title = ?, date = ?, notes = ?,
+          `UPDATE day_plans SET synced = 1, uid = ?, firestoreId = ?, title = ?, date = ?, notes = ?,
            itemCount = ?, totalSpent = ?, tripId = ?, ownerUid = ? WHERE id = ?`,
           [
-            firestoreId,
+            uid, firestoreId,
             data.title ?? null, data.date ?? null, data.notes ?? null,
             data.itemCount ?? 0, data.totalSpent ?? 0,
             data.tripId ?? null, data.ownerUid ?? null,
@@ -629,10 +629,10 @@ export async function upsertLocalTrip(
         );
       } else {
         await db.runAsync(
-          `UPDATE trips SET synced = 1, firestoreId = ?,
+          `UPDATE trips SET synced = 1, uid = ?, firestoreId = ?,
            description = ?, country = ?, state = ?, city = ?, maxCost = ?, ownerUid = ? WHERE id = ?`,
           [
-            firestoreId,
+            uid, firestoreId,
             data.description ?? null, data.country ?? null,
             data.state ?? null, data.city ?? null,
             data.maxCost ?? 0,
