@@ -191,6 +191,9 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
       // Migration: add ownerUid to trips for buddy-shared trips
       await db.execAsync(`ALTER TABLE trips ADD COLUMN ownerUid TEXT`).catch(() => {});
 
+      // Migration: participant list per day plan (JSON array of buddy emails)
+      await db.execAsync(`ALTER TABLE day_plans ADD COLUMN participants TEXT`).catch(() => {});
+
       return db;
     })();
   }

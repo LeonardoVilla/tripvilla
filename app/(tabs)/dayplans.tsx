@@ -22,7 +22,7 @@ import { useAuth } from '@/context/AuthContext';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import { addUserDayPlan, DayPlan, deleteUserDayPlan, getUserDayPlans, getUserPlaces, getUserTrips, Trip, updateUserDayPlan } from '@/services/firestoreService';
 import { useFocusRefresh } from '@/hooks/use-focus-refresh';
-import { Buddy, getLocalBuddies } from '@/services/localDb';
+import { Buddy, getLocalBuddies, updateDayPlanParticipants } from '@/services/localDb';
 import { pullFromFirestore } from '@/services/syncService';
 import { formatDate, formatCurrency } from '@/utils/format';
 
@@ -252,6 +252,21 @@ export default function DayPlansScreen() {
             const tripBuddies = !isShared && trip
               ? buddies.filter((b) => b.tripIds.includes(trip.firestoreId ?? '') || b.tripIds.includes(trip.id))
               : [];
+            const tpBuddies = tripBuddies.filter((b) => b.role === 'admin');
+            // participants null/undefined = todos da viagem estão incluídos por padrão
+            const participants: string[] | undefined = item.participants;
+            const isParticipating = (email: string) =>
+              !participants || participants.length === 0 || participants.includes(email);
+            const toggleParticipant = async (email: string) => {
+              const current = participants && participants.length > 0
+                ? participants
+                : tripBuddies.map((b) => b.email);
+              const next = current.includes(email)
+                ? current.filter((e) => e !== email)
+                : [...current, email];
+              await updateDayPlanParticipants(item.id, next);
+              setPlans((prev) => prev.map((p) => p.id === item.id ? { ...p, participants: next } : p));
+            };
             const buddiesExpanded = expandedBuddies.has(item.id);
             return (
             <View style={styles.card}>
@@ -277,6 +292,15 @@ export default function DayPlansScreen() {
                   <Text style={styles.cardDetail}>📅 {formatDate(item.date)}</Text>
                   <Text style={styles.cardDetail}>📍 {item.itemCount ?? 0} local(is)</Text>
                   <Text style={styles.cardDetail}>💰 {formatCurrency(item.totalSpent)}</Text>
+                  {!isShared && tpBuddies.length > 0 && (
+                    <View style={styles.tpBadgesRow}>
+                      {tpBuddies.map((b) => (
+                        <View key={b.id} style={styles.tpBadge}>
+                          <Text style={styles.tpBadgeText}>TP - {b.email.split('@')[0]}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
                 </View>
                 {!isShared && (
                   <View style={styles.moreBtn}>
@@ -319,15 +343,24 @@ export default function DayPlansScreen() {
                   {tripBuddies.length === 0 ? (
                     <Text style={styles.buddiesEmpty}>Nenhum buddy nesta viagem.</Text>
                   ) : (
-                    tripBuddies.map((b) => (
-                      <View key={b.id} style={styles.buddyRow}>
-                        <Ionicons name="person-circle-outline" size={18} color="#888" />
-                        <Text style={styles.buddyEmail}>{b.email}</Text>
-                        <View style={[styles.buddyRoleBadge, b.role === 'admin' ? styles.buddyRoleAdmin : styles.buddyRoleUser]}>
-                          <Text style={styles.buddyRoleText}>{b.role === 'admin' ? 'Planejador' : 'Passageiro'}</Text>
-                        </View>
-                      </View>
-                    ))
+                    tripBuddies.map((b) => {
+                      const going = isParticipating(b.email);
+                      return (
+                        <Pressable key={b.id} style={styles.buddyRow} onPress={() => toggleParticipant(b.email)}>
+                          <Ionicons
+                            name={going ? 'checkbox' : 'square-outline'}
+                            size={18}
+                            color={going ? TEAL : '#bbb'}
+                          />
+                          <Text style={[styles.buddyEmail, !going && { color: '#bbb', textDecorationLine: 'line-through' }]}>
+                            {b.role === 'admin' ? `TP - ${b.email}` : b.email}
+                          </Text>
+                          <View style={[styles.buddyRoleBadge, b.role === 'admin' ? styles.buddyRoleAdmin : styles.buddyRoleUser]}>
+                            <Text style={styles.buddyRoleText}>{b.role === 'admin' ? 'Planejador' : 'Passageiro'}</Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })
                   )}
                 </View>
               )}
@@ -619,4 +652,12 @@ const styles = StyleSheet.create({
   buddyRoleAdmin: { backgroundColor: '#e8f5e9' },
   buddyRoleUser: { backgroundColor: '#e3f2fd' },
   buddyRoleText: { fontSize: 11, fontWeight: '600', color: '#555' },
+  tpBadgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 },
+  tpBadge: {
+    backgroundColor: '#e8f5e9',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  tpBadgeText: { fontSize: 11, color: '#2e7d32', fontWeight: '700' },
 });
