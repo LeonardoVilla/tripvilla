@@ -151,16 +151,18 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
 
       // Migration: tripIds (JSON array) on buddies — which trips each buddy can see
       await db.execAsync(`ALTER TABLE buddies ADD COLUMN tripIds TEXT`).catch(() => {});
-      await db.execAsync(`ALTER TABLE buddy_owners ADD COLUMN tripIds TEXT`).catch(() => {});
 
       // buddy_owners: owners who have added the current device user as a Travel Planner buddy
       await db.execAsync(`
         CREATE TABLE IF NOT EXISTS buddy_owners (
           ownerUid TEXT PRIMARY KEY,
           ownerEmail TEXT NOT NULL,
-          role TEXT NOT NULL DEFAULT 'user'
+          role TEXT NOT NULL DEFAULT 'user',
+          tripIds TEXT
         );
       `);
+      // Migration for existing DBs that were created without tripIds column
+      await db.execAsync(`ALTER TABLE buddy_owners ADD COLUMN tripIds TEXT`).catch(() => {});
 
       // Remove sync queue entries for records already synced (firestoreId set)
       // These were left behind by the bug where immediate sync succeeded but didn't remove the queue entry.
