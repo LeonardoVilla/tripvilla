@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { getAuth } from 'firebase/auth';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
@@ -117,7 +117,18 @@ export default function DayPlanDetailScreen() {
   }, [id, planSource]);
 
   useEffect(() => {
-    loadData();
+    const auth = getAuth(firebaseApp);
+    if (auth.currentUser) {
+      loadData();
+      return;
+    }
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        unsub();
+        loadData();
+      }
+    });
+    return unsub;
   }, [loadData]);
 
   const openItemEditModal = (item: DayPlanItem) => {
