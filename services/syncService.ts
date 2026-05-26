@@ -18,6 +18,7 @@ import {
     upsertLocalPlace,
     upsertLocalTrip,
     upsertLocalTripItem,
+    updateLocalPlanTotals,
 } from './localDb';
 
 const firestoreDb = getFirestore(firebaseApp);
@@ -91,6 +92,7 @@ async function _doPull(uid: string): Promise<void> {
               true, itemDoc.id,
             );
           }
+          await updateLocalPlanTotals(planDoc.id);
         } catch { /* ignore item fetch errors */ }
       }
     } catch { /* ignore */ }
@@ -153,6 +155,7 @@ async function _doPull(uid: string): Promise<void> {
                     true, itemDoc.id,
                   );
                 }
+                await updateLocalPlanTotals(planDoc.id);
               } catch { /* ignore */ }
             }
           } catch { /* no access or offline */ }
