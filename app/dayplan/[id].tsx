@@ -87,9 +87,16 @@ export default function DayPlanDetailScreen() {
 
   const doToggleVisited = async (item: DayPlanItem, newVisited: boolean) => {
     const uid = getUid();
-    if (!uid) return;
-    await toggleDayPlanItemVisited(uid, id!, item.id, newVisited, item.firestoreId);
-    setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, visited: newVisited } : i));
+    if (!uid) {
+      Toast.show({ type: 'error', text1: 'Sessão expirada', text2: 'Faça login novamente.' });
+      return;
+    }
+    try {
+      await toggleDayPlanItemVisited(uid, id!, item.id, newVisited, item.firestoreId);
+      setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, visited: newVisited } : i));
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Erro', text2: 'Não foi possível atualizar o item.' });
+    }
   };
 
   const handleToggleVisited = (item: DayPlanItem) => {
@@ -103,6 +110,7 @@ export default function DayPlanDetailScreen() {
           { text: 'Cancelar', style: 'cancel' },
           { text: 'Confirmar', style: 'destructive', onPress: () => doToggleVisited(item, newVisited) },
         ],
+        { cancelable: true },
       );
     } else {
       doToggleVisited(item, newVisited);
