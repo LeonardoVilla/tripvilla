@@ -28,6 +28,7 @@ import {
   updateLocalBuddyFirestoreId,
   updateLocalBuddyTripIds,
   updateLocalDayPlanFields,
+  toggleLocalDayPlanItemVisited,
   updateLocalDayPlanItemFields,
   updateLocalPlaceFields,
   updateLocalPlanTotals,
@@ -155,6 +156,29 @@ export async function getDayPlanItems(
   _source?: DayPlanSource,
 ): Promise<DayPlanItem[]> {
   return getLocalDayPlanItems(uid, dayPlanId);
+}
+
+export async function toggleDayPlanItemVisited(
+  uid: string,
+  dayPlanId: string,
+  itemId: string,
+  visited: boolean,
+  itemFirestoreId?: string | null,
+): Promise<void> {
+  await toggleLocalDayPlanItemVisited(itemId, visited);
+  await updateLocalPlanTotals(dayPlanId);
+  if (itemFirestoreId) {
+    try {
+      const firestoreOwner = (await getDayPlanOwnerUid(dayPlanId)) ?? uid;
+      const planFirestoreId = await getPlanFirestoreId(dayPlanId);
+      if (planFirestoreId) {
+        await updateDoc(
+          doc(firestoreDb, `users/${firestoreOwner}/day_plans/${planFirestoreId}/items/${itemFirestoreId}`),
+          { visited },
+        );
+      }
+    } catch { /* will sync later */ }
+  }
 }
 
 export async function deleteUserDayPlan(uid: string, localId: string, firestoreId?: string | null) {

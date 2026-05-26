@@ -197,6 +197,9 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
       // Migration: mark day plan items as visited (affects report totals)
       await db.execAsync(`ALTER TABLE day_plan_items ADD COLUMN visited INTEGER DEFAULT 1`).catch(() => {});
 
+      // Migration: visited count per plan (for card summary)
+      await db.execAsync(`ALTER TABLE day_plans ADD COLUMN visitedCount INTEGER DEFAULT 0`).catch(() => {});
+
       return db;
     })();
   }

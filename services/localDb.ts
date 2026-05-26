@@ -145,6 +145,7 @@ export async function getLocalDayPlans(uid: string) {
     notes: r.notes as string | undefined,
     itemCount: (r.itemCount as number) ?? 0,
     totalSpent: (r.totalSpent as number) ?? 0,
+    visitedCount: (r.visitedCount as number) ?? 0,
     createdAt: r.createdAt as string | undefined,
     _source: (r.source ?? 'user') as 'user' | 'root',
     _synced: Boolean(r.synced),
@@ -237,9 +238,13 @@ export async function updateLocalPlanTotals(planId: string) {
     'SELECT SUM(amountSpent) as total FROM day_plan_items WHERE uid = ? AND dayPlanId = ? AND (visited IS NULL OR visited = 1)',
     [uid, planId],
   );
+  const visitedResult = await db.getFirstAsync<{ cnt: number }>(
+    'SELECT COUNT(*) as cnt FROM day_plan_items WHERE uid = ? AND dayPlanId = ? AND (visited IS NULL OR visited = 1)',
+    [uid, planId],
+  );
   await db.runAsync(
-    'UPDATE day_plans SET itemCount = ?, totalSpent = ? WHERE id = ?',
-    [countResult?.cnt ?? 0, spentResult?.total ?? 0, planId],
+    'UPDATE day_plans SET itemCount = ?, totalSpent = ?, visitedCount = ? WHERE id = ?',
+    [countResult?.cnt ?? 0, spentResult?.total ?? 0, visitedResult?.cnt ?? 0, planId],
   );
 }
 
@@ -313,16 +318,19 @@ export async function upsertLocalDayPlanItem(
           [firestoreId, existing.id],
         );
       } else {
+        const visitedVal = data.visited === false ? 0 : data.visited === true ? 1 : null;
         await db.runAsync(
           `UPDATE day_plan_items SET synced = 1, firestoreId = ?,
            arrivalTime = ?, leaveTime = ?, amountSpent = ?, notes = ?,
-           placeName = ?, placeLocation = ?, ownerUid = ? WHERE id = ?`,
+           placeName = ?, placeLocation = ?, ownerUid = ?,
+           visited = CASE WHEN ? IS NOT NULL THEN ? ELSE visited END WHERE id = ?`,
           [
             firestoreId,
             data.arrivalTime ?? null, data.leaveTime ?? null,
             data.amountSpent ?? 0, data.notes ?? null,
             data.placeName ?? null, data.placeLocation ?? null,
             data.ownerUid ?? null,
+            visitedVal, visitedVal,
             existing.id,
           ],
         );

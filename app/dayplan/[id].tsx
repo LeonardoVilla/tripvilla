@@ -4,6 +4,7 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
     KeyboardAvoidingView,
     Modal,
@@ -27,9 +28,9 @@ import {
     deleteDayPlanItem,
     getDayPlanItems,
     getUserPlaces,
+    toggleDayPlanItemVisited,
     updateDayPlanItem,
 } from '@/services/firestoreService';
-import { toggleLocalDayPlanItemVisited, updateLocalPlanTotals } from '@/services/localDb';
 import { BG, shadowCard, shadowFab, shadowMenu, TEAL } from '@/constants/AppTheme';
 import { formatDate } from '@/utils/format';
 
@@ -84,11 +85,37 @@ export default function DayPlanDetailScreen() {
     [items],
   );
 
-  const handleToggleVisited = async (item: DayPlanItem) => {
-    const newVisited = !(item.visited !== false);
-    await toggleLocalDayPlanItemVisited(item.id, newVisited);
-    await updateLocalPlanTotals(id!);
+  const doToggleVisited = async (item: DayPlanItem, newVisited: boolean) => {
+    const uid = getUid();
+    if (!uid) return;
+    await toggleDayPlanItemVisited(uid, id!, item.id, newVisited, item.firestoreId);
     setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, visited: newVisited } : i));
+  };
+
+  const handleToggleVisited = (item: DayPlanItem) => {
+    const currentVisited = item.visited !== false;
+    const newVisited = !currentVisited;
+    if (!newVisited && (item.amountSpent ?? 0) > 0) {
+      Alert.alert(
+        'Desmarcar como visitado?',
+        `Isso vai remover ${formatCurrency(item.amountSpent)} do total gasto.`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Confirmar', style: 'destructive', onPress: () => doToggleVisited(item, newVisited) },
+        ],
+      );
+    } else {
+      doToggleVisited(item, newVisited);
+    }
+  };
+
+  const handleMarkAll = async (visited: boolean) => {
+    const uid = getUid();
+    if (!uid) return;
+    for (const item of items) {
+      await toggleDayPlanItemVisited(uid, id!, item.id, visited, item.firestoreId);
+    }
+    setItems((prev) => prev.map((i) => ({ ...i, visited })));
   };
 
   const loadData = useCallback(async () => {
@@ -254,9 +281,20 @@ export default function DayPlanDetailScreen() {
         <Text style={styles.headerTitle} numberOfLines={1}>
           {title ?? 'Role do dia'}
         </Text>
-        <Pressable style={styles.iconBtn}>
-          <Ionicons name="pencil-outline" size={22} color="#1a1a1a" />
-        </Pressable>
+        <View style={{ flexDirection: 'row', gap: 4 }}>
+          {items.length > 0 && (
+            items.every((i) => i.visited !== false)
+              ? <Pressable style={styles.iconBtn} onPress={() => handleMarkAll(false)}>
+                  <Ionicons name="checkmark-done" size={22} color={TEAL} />
+                </Pressable>
+              : <Pressable style={styles.iconBtn} onPress={() => handleMarkAll(true)}>
+                  <Ionicons name="checkmark-done-outline" size={22} color="#999" />
+                </Pressable>
+          )}
+          <Pressable style={styles.iconBtn}>
+            <Ionicons name="pencil-outline" size={22} color="#1a1a1a" />
+          </Pressable>
+        </View>
       </View>
 
       {loadingItems ? (
