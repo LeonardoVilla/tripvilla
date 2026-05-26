@@ -29,7 +29,7 @@ import {
     getUserPlaces,
     updateDayPlanItem,
 } from '@/services/firestoreService';
-import { toggleLocalDayPlanItemVisited } from '@/services/localDb';
+import { toggleLocalDayPlanItemVisited, updateLocalPlanTotals } from '@/services/localDb';
 import { BG, shadowCard, shadowFab, shadowMenu, TEAL } from '@/constants/AppTheme';
 import { formatDate } from '@/utils/format';
 
@@ -87,6 +87,7 @@ export default function DayPlanDetailScreen() {
   const handleToggleVisited = async (item: DayPlanItem) => {
     const newVisited = !(item.visited !== false);
     await toggleLocalDayPlanItemVisited(item.id, newVisited);
+    await updateLocalPlanTotals(id!);
     setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, visited: newVisited } : i));
   };
 
