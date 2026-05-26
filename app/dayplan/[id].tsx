@@ -4,7 +4,6 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     FlatList,
     KeyboardAvoidingView,
     Modal,
@@ -101,20 +100,7 @@ export default function DayPlanDetailScreen() {
 
   const handleToggleVisited = (item: DayPlanItem) => {
     const currentVisited = item.visited !== false;
-    const newVisited = !currentVisited;
-    if (!newVisited && (item.amountSpent ?? 0) > 0) {
-      Alert.alert(
-        'Desmarcar como visitado?',
-        `Isso vai remover ${formatCurrency(item.amountSpent)} do total gasto.`,
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          { text: 'Confirmar', style: 'destructive', onPress: () => doToggleVisited(item, newVisited) },
-        ],
-        { cancelable: true },
-      );
-    } else {
-      doToggleVisited(item, newVisited);
-    }
+    doToggleVisited(item, !currentVisited);
   };
 
   const handleMarkAll = async (visited: boolean) => {
