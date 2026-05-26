@@ -290,7 +290,9 @@ export default function DayPlansScreen() {
                   ) : null}
                   <Text style={styles.cardName}>{item.title ?? 'Sem título'}</Text>
                   <Text style={styles.cardDetail}>📅 {formatDate(item.date)}</Text>
-                  <Text style={styles.cardDetail}>📍 {item.itemCount ?? 0} local(is)</Text>
+                  <Text style={styles.cardDetail}>
+                    {`📍 ${item.itemCount ?? 0} local(is)`}{(item.itemCount ?? 0) > 0 ? `  ✓ ${item.visitedCount ?? 0}/${item.itemCount ?? 0} visitados` : ''}
+                  </Text>
                   <Text style={styles.cardDetail}>💰 {formatCurrency(item.totalSpent)}</Text>
                   {!isShared && tpBuddies.length > 0 && (
                     <View style={styles.tpBadgesRow}>
