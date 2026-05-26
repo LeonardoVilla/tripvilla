@@ -226,13 +226,16 @@ export async function getDayPlanOwnerUid(id: string): Promise<string | null> {
 
 export async function updateLocalPlanTotals(planId: string) {
   const db = await getDb();
+  const plan = await db.getFirstAsync<{ uid: string }>('SELECT uid FROM day_plans WHERE id = ?', [planId]);
+  const uid = plan?.uid;
+  if (!uid) return;
   const countResult = await db.getFirstAsync<{ cnt: number }>(
-    'SELECT COUNT(*) as cnt FROM day_plan_items WHERE dayPlanId = ?',
-    [planId],
+    'SELECT COUNT(*) as cnt FROM day_plan_items WHERE uid = ? AND dayPlanId = ?',
+    [uid, planId],
   );
   const spentResult = await db.getFirstAsync<{ total: number | null }>(
-    'SELECT SUM(amountSpent) as total FROM day_plan_items WHERE dayPlanId = ? AND (visited IS NULL OR visited = 1)',
-    [planId],
+    'SELECT SUM(amountSpent) as total FROM day_plan_items WHERE uid = ? AND dayPlanId = ? AND (visited IS NULL OR visited = 1)',
+    [uid, planId],
   );
   await db.runAsync(
     'UPDATE day_plans SET itemCount = ?, totalSpent = ? WHERE id = ?',
