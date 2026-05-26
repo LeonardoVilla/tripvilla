@@ -273,9 +273,15 @@ export async function getLocalDayPlanItems(uid: string, dayPlanId: string) {
     amountSpent: (r.amountSpent as number) ?? 0,
     notes: r.notes as string | undefined,
     addedAt: r.addedAt as string | undefined,
+    visited: r.visited === null || r.visited === undefined ? true : Boolean(r.visited),
     _source: (r.source ?? 'user') as 'user' | 'root',
     _synced: Boolean(r.synced),
   }));
+}
+
+export async function toggleLocalDayPlanItemVisited(itemId: string, visited: boolean): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(`UPDATE day_plan_items SET visited = ? WHERE id = ?`, [visited ? 1 : 0, itemId]);
 }
 
 export async function upsertLocalDayPlanItem(
