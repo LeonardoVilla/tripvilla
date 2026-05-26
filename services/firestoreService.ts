@@ -73,6 +73,7 @@ export type DayPlanItem = {
   amountSpent?: number;
   notes?: string;
   addedAt?: string;
+  visited?: boolean;
   _source: DayPlanSource;
 };
 

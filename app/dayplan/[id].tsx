@@ -29,6 +29,7 @@ import {
     getUserPlaces,
     updateDayPlanItem,
 } from '@/services/firestoreService';
+import { toggleLocalDayPlanItemVisited } from '@/services/localDb';
 import { BG, shadowCard, shadowFab, shadowMenu, TEAL } from '@/constants/AppTheme';
 import { formatDate } from '@/utils/format';
 
@@ -79,9 +80,15 @@ export default function DayPlanDetailScreen() {
   );
 
   const totalSpent = useMemo(
-    () => items.reduce((acc, item) => acc + (item.amountSpent ?? 0), 0),
+    () => items.filter((i) => i.visited !== false).reduce((acc, item) => acc + (item.amountSpent ?? 0), 0),
     [items],
   );
+
+  const handleToggleVisited = async (item: DayPlanItem) => {
+    const newVisited = !(item.visited !== false);
+    await toggleLocalDayPlanItemVisited(item.id, newVisited);
+    setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, visited: newVisited } : i));
+  };
 
   const loadData = useCallback(async () => {
     const uid = getUid();
@@ -255,13 +262,26 @@ export default function DayPlanDetailScreen() {
               <Text style={styles.summaryDetail}>Quantidade de paradas: {items.length}</Text>
             </View>
           }
-          renderItem={({ item }) => (
-            <View style={styles.card}>
+          renderItem={({ item }) => {
+            const visited = item.visited !== false;
+            return (
+            <View style={[styles.card, !visited && styles.cardNotVisited]}>
+              <Pressable style={styles.visitedToggle} onPress={() => handleToggleVisited(item)}>
+                <Ionicons
+                  name={visited ? 'checkbox' : 'square-outline'}
+                  size={22}
+                  color={visited ? TEAL : '#bbb'}
+                />
+              </Pressable>
               <View style={styles.cardContent}>
-                <Text style={styles.cardName}>{item.placeName ?? 'Local'}</Text>
+                <Text style={[styles.cardName, !visited && styles.cardNameNotVisited]}>
+                  {item.placeName ?? 'Local'}
+                </Text>
                 <Text style={styles.cardDetail}>Chegada: {item.arrivalTime ?? '-'}</Text>
                 <Text style={styles.cardDetail}>Saida prevista: {item.leaveTime ?? '-'}</Text>
-                <Text style={styles.cardDetail}>Gasto no local: {formatCurrency(item.amountSpent)}</Text>
+                <Text style={styles.cardDetail}>
+                  Gasto no local: {visited ? formatCurrency(item.amountSpent) : 'Não visitado'}
+                </Text>
                 {!!(item as any).placeLocation && (
                   <Text style={styles.cardDetail}>Endereco: {(item as any).placeLocation}</Text>
                 )}
@@ -284,7 +304,8 @@ export default function DayPlanDetailScreen() {
                 )}
               </View>
             </View>
-          )}
+            );
+          }}
           ListEmptyComponent={<Text style={styles.empty}>Nenhum local adicionado ainda.</Text>}
         />
       )}
@@ -490,8 +511,11 @@ const styles = StyleSheet.create({
     ...shadowCard,
   },
   cardContent: { flex: 1 },
+  cardNotVisited: { opacity: 0.55, borderLeftWidth: 3, borderLeftColor: '#e0e0e0' },
   cardName: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginBottom: 4 },
+  cardNameNotVisited: { textDecorationLine: 'line-through', color: '#aaa' },
   cardDetail: { fontSize: 13, color: '#555', marginBottom: 2 },
+  visitedToggle: { paddingRight: 10, paddingTop: 2 },
   moreBtn: { paddingLeft: 8, paddingTop: 2, position: 'relative', alignItems: 'center' },
   optionsMenu: {
     position: 'absolute',

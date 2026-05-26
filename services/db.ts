@@ -194,6 +194,9 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
       // Migration: participant list per day plan (JSON array of buddy emails)
       await db.execAsync(`ALTER TABLE day_plans ADD COLUMN participants TEXT`).catch(() => {});
 
+      // Migration: mark day plan items as visited (affects report totals)
+      await db.execAsync(`ALTER TABLE day_plan_items ADD COLUMN visited INTEGER DEFAULT 1`).catch(() => {});
+
       return db;
     })();
   }

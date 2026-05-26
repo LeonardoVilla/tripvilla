@@ -364,9 +364,14 @@ export default function ReportsScreen() {
                             ) : null}
                           </View>
                         </View>
-                        {(detail.amountSpent ?? 0) > 0 && (
+                        {(detail.amountSpent ?? 0) > 0 && detail.visited !== false && (
                           <Text style={styles.detailAmount}>
                             {formatCurrency(detail.amountSpent)}
+                          </Text>
+                        )}
+                        {detail.visited === false && (
+                          <Text style={[styles.detailAmount, { color: '#bbb', textDecorationLine: 'line-through' }]}>
+                            Não visitado
                           </Text>
                         )}
                       </View>
