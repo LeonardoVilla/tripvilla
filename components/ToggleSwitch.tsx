@@ -1,3 +1,4 @@
+import { TEAL } from '@/constants/AppTheme';
 import React from 'react';
 import { Animated, Pressable, StyleSheet } from 'react-native';
 
@@ -34,8 +35,8 @@ const styles = StyleSheet.create({
     transitionDuration: '200ms',
   },
   on: {
-    backgroundColor: '#4ade80', // green
-    borderColor: '#22c55e',
+    backgroundColor: TEAL,
+    borderColor: TEAL,
   },
   off: {
     backgroundColor: '#e5e7eb', // gray
