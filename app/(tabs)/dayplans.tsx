@@ -1,3 +1,4 @@
+import ToggleSwitch from '@/components/ToggleSwitch';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -19,12 +20,12 @@ import Toast from 'react-native-toast-message';
 
 import { BG, shadowCard, shadowFab, shadowMenu, TEAL } from '@/constants/AppTheme';
 import { useAuth } from '@/context/AuthContext';
+import { useFocusRefresh } from '@/hooks/use-focus-refresh';
 import { getFirebaseErrorMessage } from '@/lib/firebaseErrorMessages';
 import { addUserDayPlan, DayPlan, deleteUserDayPlan, getUserDayPlans, getUserPlaces, getUserTrips, Trip, updateUserDayPlan } from '@/services/firestoreService';
-import { useFocusRefresh } from '@/hooks/use-focus-refresh';
 import { Buddy, getLocalBuddies, updateDayPlanParticipants } from '@/services/localDb';
 import { pullFromFirestore } from '@/services/syncService';
-import { formatDate, formatCurrency } from '@/utils/format';
+import { formatCurrency, formatDate } from '@/utils/format';
 
 export default function DayPlansScreen() {
   const router = useRouter();
@@ -348,19 +349,19 @@ export default function DayPlansScreen() {
                     tripBuddies.map((b) => {
                       const going = isParticipating(b.email);
                       return (
-                        <Pressable key={b.id} style={styles.buddyRow} onPress={() => toggleParticipant(b.email)}>
-                          <Ionicons
-                            name={going ? 'checkbox' : 'square-outline'}
-                            size={18}
-                            color={going ? TEAL : '#bbb'}
+                        <View key={b.id} style={styles.buddyRow}>
+                          <ToggleSwitch
+                            value={going}
+                            onValueChange={() => toggleParticipant(b.email)}
+                            disabled={b.role === 'admin'}
                           />
-                          <Text style={[styles.buddyEmail, !going && { color: '#bbb', textDecorationLine: 'line-through' }]}>
+                          <Text style={[styles.buddyEmail, !going && { color: '#bbb', textDecorationLine: 'line-through' }]}> 
                             {b.role === 'admin' ? `TP - ${b.email}` : b.email}
                           </Text>
                           <View style={[styles.buddyRoleBadge, b.role === 'admin' ? styles.buddyRoleAdmin : styles.buddyRoleUser]}>
                             <Text style={styles.buddyRoleText}>{b.role === 'admin' ? 'Planejador' : 'Passageiro'}</Text>
                           </View>
-                        </Pressable>
+                        </View>
                       );
                     })
                   )}
