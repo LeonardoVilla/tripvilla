@@ -1,3 +1,4 @@
+import ToggleSwitch from '@/components/ToggleSwitch';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
@@ -310,13 +311,12 @@ export default function DayPlanDetailScreen() {
             const visited = item.visited !== false;
             return (
             <View style={[styles.card, !visited && styles.cardNotVisited]}>
-              <Pressable style={styles.visitedToggle} onPress={() => handleToggleVisited(item)}>
-                <Ionicons
-                  name={visited ? 'checkbox' : 'square-outline'}
-                  size={22}
-                  color={visited ? TEAL : '#bbb'}
+              <View style={styles.visitedToggle}>
+                <ToggleSwitch
+                  value={visited}
+                  onValueChange={() => handleToggleVisited(item)}
                 />
-              </Pressable>
+              </View>
               <View style={styles.cardContent}>
                 <Text style={[styles.cardName, !visited && styles.cardNameNotVisited]}>
                   {item.placeName ?? 'Local'}
